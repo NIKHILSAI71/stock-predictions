@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity AI-Driven Market Intelligence</title>
+    <meta name="description" content="Premium stock market analysis powered by Gemini AI">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico">
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="logo">
+                <div class="logo-mark">A</div>
+                <span class="logo-text">ANTIGRAVITY</span>
+            </div>
+            <div class="search-bar">
+                <div class="market-dropdown" id="marketDropdown">
+                    <button class="market-dropdown-btn" id="marketDropdownBtn">
+                        <span id="marketSelected">US</span>
+                        <svg class="dropdown-arrow" width="8" height="5" viewBox="0 0 8 5" fill="none">
+                            <path d="M1 1L4 4L7 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                    <div class="market-dropdown-menu" id="marketDropdownMenu">
+                        <div class="market-option active" data-value="US">US</div>
+                        <div class="market-option" data-value="NS">NSE</div>
+                        <div class="market-option" data-value="BO">BSE</div>
+                        <div class="market-option" data-value="L">LSE</div>
+                    </div>
+                </div>
+                <div class="search-divider"></div>
+                <input type="text" id="stockSearch" placeholder="SEARCH TICKER" autocomplete="off">
+                <button id="analyzeBtn" class="btn-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="nav-status">
+                <span class="status-dot"></span>
+                <span id="systemStatus">SYSTEM ONLINE</span>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+
+            <!-- Hero / Stock Header with Full Width Chart Background -->
+            <header id="stockHeader" class="stock-header hidden">
+                <!-- Chart as Background -->
+                <div id="priceChart" class="center-chart"></div>
+
+                <!-- Overlay: Stock Name and Price -->
+                <div class="stock-overlay">
+                    <div class="stock-info">
+                        <h1 id="stockSymbol" class="display-ticker">-</h1>
+                        <h2 id="stockName" class="display-name">-</h2>
+                    </div>
+                    <div class="price-display">
+                        <div class="current-price" id="currentPrice">-</div>
+                        <div class="price-change" id="priceChange">-</div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- AI Insight Section (Premium Feature) -->
+            <section id="aiSection" class="ai-insight-panel hidden">
+                <div class="panel-header">
+                    <h3>GEMINI INTELLIGENCE</h3>
+                    <span class="confidence-badge">CONFIDENCE: <span id="aiConfidence">-</span>%</span>
+                </div>
+
+                <!-- 1. Top: Executive Summary -->
+                <div class="ai-main-summary">
+                    <h4>EXECUTIVE SUMMARY</h4>
+                    <p id="aiSummary" class="typing-effect">Initializing analysis</p>
+                </div>
+
+                <!-- 2. Middle: Drivers & Risks (Side-by-Side) -->
+                <div class="ai-details-grid">
+                    <div class="detail-block">
+                        <h5>KEY DRIVERS</h5>
+                        <ul id="aiFactors" class="drivers-list"></ul>
+                    </div>
+                    <div class="detail-block">
+                        <h5>RISK FACTORS</h5>
+                        <ul id="aiRisks" class="risks-list"></ul>
+                    </div>
+                </div>
+
+                <!-- Stress Test Warning (hidden by default) -->
+                <div id="stressTestWarning" class="stress-test-warning hidden">
+                    <div class="stress-label">STRESS TEST WARNING</div>
+                    <div class="stress-pattern" id="stressPattern">-</div>
+                    <div class="stress-details" id="stressDetails">-</div>
+                </div>
+
+                <!-- Risk Metrics Section (hidden by default) -->
+                <div id="riskMetricsSection" class="risk-metrics-section hidden">
+                    <div class="risk-metrics-row">
+                        <div class="risk-metric-item">
+                            <span class="risk-metric-label">EVENT RISK</span>
+                            <span class="risk-metric-value" id="eventRiskValue">-</span>
+                            <span class="risk-metric-max">/100</span>
+                        </div>
+                        <div class="risk-metric-item">
+                            <span class="risk-metric-label">FRAGILITY</span>
+                            <span class="risk-metric-value" id="fragilityValue">-</span>
+                            <span class="risk-metric-max">/100</span>
+                        </div>
+                        <div class="risk-metric-item">
+                            <span class="risk-metric-label">CONF. PENALTY</span>
+                            <span class="risk-metric-value" id="confPenaltyValue">-</span>
+                            <span class="risk-metric-max">applied</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- What Could Go Wrong (hidden by default) -->
+                <div id="wcgwSection" class="wcgw-section hidden">
+                    <div class="wcgw-header">WHAT COULD GO WRONG</div>
+                    <ul id="wcgwList" class="wcgw-list"></ul>
+                </div>
+
+                <!-- 3. Bottom: Action/Recommendation -->
+                <div class="ai-action-row">
+                    <div class="recommendation-box" id="aiRecommendationBox">
+                        <span class="rec-label">ACTION</span>
+                        <span class="rec-value" id="aiRecommendation">-</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MODEL TRANSPARENCY SECTION (NEW) -->
+            <section id="modelTransparency" class="transparency-panel hidden">
+                <div class="panel-header-small" onclick="toggleSection('transparencyDetails')">
+                    <h4>MODEL TRANSPARENCY & ACCURACY</h4>
+                    <span class="expand-icon">+</span>
+                </div>
+                <div id="transparencyDetails" class="transparency-content">
+                    <div class="models-grid" id="modelsGrid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- PRICE TARGETS SECTION (NEW) -->
+            <section id="priceTargets" class="targets-panel hidden">
+                <h4>PRICE FORECASTS & CONFIDENCE INTERVALS</h4>
+                <div class="targets-container">
+                    <!-- 7-Day Target -->
+                    <div class="target-card">
+                        <div class="target-period">7-DAY</div>
+                        <div class="target-price" id="target7d">-</div>
+                        <div class="target-range">
+                            <span class="range-label">Range:</span>
+                            <span id="range7d">-</span>
+                        </div>
+                        <div class="target-direction" id="direction7d">-</div>
+                    </div>
+                    <!-- 30-Day Target -->
+                    <div class="target-card">
+                        <div class="target-period">30-DAY</div>
+                        <div class="target-price" id="target30d">-</div>
+                        <div class="target-range">
+                            <span class="range-label">Range:</span>
+                            <span id="range30d">-</span>
+                        </div>
+                        <div class="target-direction" id="direction30d">-</div>
+                    </div>
+                    <!-- 90-Day Target -->
+                    <div class="target-card">
+                        <div class="target-period">90-DAY</div>
+                        <div class="target-price" id="target90d">-</div>
+                        <div class="target-range">
+                            <span class="range-label">Range:</span>
+                            <span id="range90d">-</span>
+                        </div>
+                        <div class="target-direction" id="direction90d">-</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- HISTORICAL VALIDATION SECTION (REDESIGNED) -->
+            <section id="historicalValidation" class="history-panel hidden">
+                <div class="history-header">
+                    <h4>PREDICTION TRACK RECORD</h4>
+                    <div class="accuracy-pill">
+                        SYSTEM ACCURACY: <span id="systemAccuracy">-</span>%
+                    </div>
+                </div>
+
+                <div class="track-record-grid">
+                    <!-- Validated Predictions -->
+                    <div class="track-stat">
+                        <span class="track-stat-value" id="validatedCount">-</span>
+                        <span class="track-stat-label">VALIDATED PREDICTIONS</span>
+                        <div class="track-stat-bar">
+                            <div class="track-stat-fill" style="width: 78%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Win Rate -->
+                    <div class="track-stat">
+                        <span class="track-stat-value text-green" id="backtestWinRate">-</span>
+                        <span class="track-stat-label">BACKTEST WIN RATE</span>
+                        <div class="track-stat-bar">
+                            <div class="track-stat-fill fill-green" style="width: 64%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Sharpe Ratio -->
+                    <div class="track-stat">
+                        <span class="track-stat-value" id="strategySharpe">-</span>
+                        <span class="track-stat-label">SHARPE RATIO</span>
+                        <div class="track-stat-bar">
+                            <div class="track-stat-fill" style="width: 92%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Model Consensus -->
+                    <div class="track-stat">
+                        <span class="track-stat-value" id="modelConsensus">6/6</span>
+                        <span class="track-stat-label">MODELS IN AGREEMENT</span>
+                        <div class="track-stat-bar">
+                            <div class="track-stat-fill" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="history-note">
+                    * Past performance is not indicative of future results
+                </p>
+            </section>
+
+            <!-- Chart Section Removed (Moved to Header Background) -->
+
+            <!-- Data Grid -->
+            <section id="dataGrid" class="data-grid hidden">
+                <!-- Technical Column -->
+                <div class="data-column">
+                    <div class="col-header">TECHNICAL</div>
+                    <div class="metric-row">
+                        <span class="metric-label">RSI (14)</span>
+                        <span class="metric-value" id="rsiValue">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">MACD</span>
+                        <span class="metric-value" id="macdValue">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">ADX</span>
+                        <span class="metric-value" id="adxValue">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">ATR</span>
+                        <span class="metric-value" id="atrValue">-</span>
+                    </div>
+                </div>
+
+                <!-- Fundamental Column -->
+                <div class="data-column">
+                    <div class="col-header">FUNDAMENTAL</div>
+                    <div class="metric-row">
+                        <span class="metric-label">P/E (TTM)</span>
+                        <span class="metric-value" id="peRatio">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Forward P/E</span>
+                        <span class="metric-value" id="fwdPeRatio">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Market Cap</span>
+                        <span class="metric-value" id="marketCap">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Div Yield</span>
+                        <span class="metric-value" id="divYield">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Net Margin</span>
+                        <span class="metric-value" id="netMargin">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Oper. Margin</span>
+                        <span class="metric-value" id="operMargin">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">ROE</span>
+                        <span class="metric-value" id="roe">-</span>
+                    </div>
+                </div>
+
+                <!-- Signals Column -->
+                <div class="data-column">
+                    <div class="col-header">SIGNALS & RISK</div>
+                    <div class="metric-row" id="signalRow1">
+                        <span class="metric-label">Signal</span>
+                        <span class="signal-tag" id="mainSignal">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Strength</span>
+                        <span class="metric-value" id="signalStrength">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">PE vs Industry</span>
+                        <span class="signal-tag" id="peVsIndustry">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Overvaluation</span>
+                        <span class="signal-tag" id="overvaluationPct">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">MACD Divergence</span>
+                        <span class="signal-tag" id="macdDivergence">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">RSI Status</span>
+                        <span class="signal-tag" id="rsiStatus">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Pullback Target</span>
+                        <span class="metric-value" id="pullbackTarget">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Stop Loss</span>
+                        <span class="metric-value" id="stopLoss">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Position Size</span>
+                        <span class="metric-value" id="positionSize">-</span>
+                    </div>
+                </div>
+
+                <!-- ML PREDICTIONS Column (NEW) -->
+                <div class="data-column">
+                    <div class="col-header">ML PREDICTIONS</div>
+                    <div class="metric-row">
+                        <span class="metric-label">ML Direction</span>
+                        <span class="signal-tag" id="mlDirection">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">ML Confidence</span>
+                        <span class="metric-value" id="mlConfidence">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Random Forest</span>
+                        <span class="signal-tag" id="rfPrediction">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">SVM</span>
+                        <span class="signal-tag" id="svmPrediction">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Momentum</span>
+                        <span class="signal-tag" id="momentumPrediction">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Models Agree</span>
+                        <span class="signal-tag" id="modelsAgree">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Top Feature</span>
+                        <span class="metric-value" id="topFeature">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Cluster Profile</span>
+                        <span class="metric-value" id="clusterProfile">-</span>
+                    </div>
+                </div>
+
+                <!-- Staged Entry Column (NEW) -->
+                <div class="data-column">
+                    <div class="col-header">STAGED ENTRY</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Position Size</span>
+                        <span class="signal-tag" id="stagedPositionPct">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Market Regime</span>
+                        <span class="signal-tag" id="marketRegime">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Regime Override</span>
+                        <span class="signal-tag" id="regimeOverride">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Ideal Entry</span>
+                        <span class="metric-value text-green" id="idealEntry">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Price vs Ideal</span>
+                        <span class="metric-value" id="priceVsIdeal">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Entry Tier 1</span>
+                        <span class="metric-value text-yellow" id="entryTier1">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Entry Tier 2</span>
+                        <span class="metric-value text-green" id="entryTier2">-</span>
+                    </div>
+                </div>
+
+                <!-- Valuation Column -->
+                <div class="data-column">
+                    <div class="col-header">VALUATION</div>
+                    <div class="metric-row">
+                        <span class="metric-label">DCF Intrinsic</span>
+                        <span class="metric-value text-green" id="dcfIntrinsic">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Overvaluation</span>
+                        <span class="signal-tag" id="dcfOverval">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">PEG Ratio</span>
+                        <span class="metric-value" id="pegRatio">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">PEG Status</span>
+                        <span class="signal-tag" id="pegStatus">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Fair Value</span>
+                        <span class="metric-value" id="fairValue">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">P/B Ratio</span>
+                        <span class="metric-value" id="pbRatio">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">P/S Ratio</span>
+                        <span class="metric-value" id="psRatio">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">EV/EBITDA</span>
+                        <span class="metric-value" id="evEbitda">-</span>
+                    </div>
+                </div>
+
+                <!-- Volume Confirmation Column (NEW) -->
+                <div class="data-column">
+                    <div class="col-header">VOLUME ANALYSIS</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Volume Ratio</span>
+                        <span class="metric-value" id="volumeRatio">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Conviction</span>
+                        <span class="signal-tag" id="volumeConviction">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">OBV Trend</span>
+                        <span class="signal-tag" id="obvTrend">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">MFI</span>
+                        <span class="metric-value" id="mfiValue">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">MFI Signal</span>
+                        <span class="signal-tag" id="mfiSignal">-</span>
+                    </div>
+                </div>
+
+                <!-- Intermediate Levels Column (NEW) -->
+                <div class="data-column">
+                    <div class="col-header">PIVOT LEVELS</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Pivot Point</span>
+                        <span class="metric-value" id="pivotPoint">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Resistance R1</span>
+                        <span class="metric-value text-red" id="resistanceR1">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Resistance R2</span>
+                        <span class="metric-value text-red" id="resistanceR2">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Support S1</span>
+                        <span class="metric-value text-green" id="supportS1">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Support S2</span>
+                        <span class="metric-value text-green" id="supportS2">-</span>
+                    </div>
+                </div>
+
+                <!-- Fibonacci Levels Column (NEW) -->
+                <div class="data-column">
+                    <div class="col-header">FIBONACCI LEVELS</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Trend</span>
+                        <span class="signal-tag" id="fibTrend">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Swing High</span>
+                        <span class="metric-value text-red" id="fibSwingHigh">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Swing Low</span>
+                        <span class="metric-value text-green" id="fibSwingLow">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Fib 23.6%</span>
+                        <span class="metric-value" id="fib236">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Fib 38.2%</span>
+                        <span class="metric-value" id="fib382">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Fib 50%</span>
+                        <span class="metric-value" id="fib500">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Fib 61.8%</span>
+                        <span class="metric-value" id="fib618">-</span>
+                    </div>
+                </div>
+
+                <!-- Risk Column -->
+                <div class="data-column">
+                    <div class="col-header">RISK & HEALTH</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Volatility</span>
+                        <span class="metric-value" id="volatility">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Sharpe Ratio</span>
+                        <span class="metric-value" id="sharpeRatio">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Max Drawdown</span>
+                        <span class="metric-value" id="maxDrawdown">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Beta</span>
+                        <span class="metric-value" id="betaValue">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Debt/Equity</span>
+                        <span class="metric-value" id="debtEquity">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Current Ratio</span>
+                        <span class="metric-value" id="currentRatio">-</span>
+                    </div>
+                </div>
+
+                <!-- Enhanced AI Predictions Column (NEW) -->
+                <div class="data-column">
+                    <div class="col-header">ENHANCED AI</div>
+                    <div class="metric-row">
+                        <span class="metric-label">LSTM Forecast</span>
+                        <span class="signal-tag" id="lstmDirection">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">LSTM Confidence</span>
+                        <span class="metric-value" id="lstmConfidence">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">5-Day Target</span>
+                        <span class="metric-value" id="lstm5DayTarget">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Ensemble Score</span>
+                        <span class="metric-value" id="ensembleScore">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Sector Strength</span>
+                        <span class="signal-tag" id="sectorStrength">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Insider Signal</span>
+                        <span class="signal-tag" id="insiderSignal">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Options Flow</span>
+                        <span class="signal-tag" id="optionsFlow">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Anomaly Alerts</span>
+                        <span class="signal-tag" id="anomalyAlerts">-</span>
+                    </div>
+                </div>
+
+                <!-- Advanced ML Column (NEW) -->
+                <div class="data-column">
+                    <div class="col-header">ADVANCED ML</div>
+                    <div class="metric-row">
+                        <span class="metric-label">XGBoost</span>
+                        <span class="signal-tag" id="xgboostDirection">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">XGBoost Conf.</span>
+                        <span class="metric-value" id="xgboostConfidence">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">GRU</span>
+                        <span class="signal-tag" id="gruDirection">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">GRU Conf.</span>
+                        <span class="metric-value" id="gruConfidence">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">CNN-LSTM</span>
+                        <span class="signal-tag" id="cnnLstmDirection">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">CNN-LSTM Conf.</span>
+                        <span class="metric-value" id="cnnLstmConfidence">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Attention</span>
+                        <span class="signal-tag" id="attentionDirection">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Attention Conf.</span>
+                        <span class="metric-value" id="attentionConfidence">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">GARCH Model</span>
+                        <span class="metric-value" id="garchModel">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Vol. Regime</span>
+                        <span class="signal-tag" id="volatilityRegime">-</span>
+                    </div>
+                </div>
+
+                <!-- Patterns & Sentiment Column -->
+                <div class="data-column">
+                    <div class="col-header">PATTERNS & SENTIMENT</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Candlestick Pat.</span>
+                        <span class="metric-value" id="candlePattern">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">News Sentiment</span>
+                        <span class="signal-tag" id="newsSentiment">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Sentiment Score</span>
+                        <span class="metric-value" id="socialSentiment">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Web Traffic</span>
+                        <span class="metric-value" id="webTraffic">-</span>
+                    </div>
+                </div>
+
+                <!-- Market Context Column -->
+                <div class="data-column">
+                    <div class="col-header">MARKET CONTEXT</div>
+                    <div class="metric-row">
+                        <span class="metric-label">S&P 500</span>
+                        <span class="metric-value" id="sp500Val">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">VIX</span>
+                        <span class="metric-value" id="vixVal">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">10Y Yield</span>
+                        <span class="metric-value" id="10yYield">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Yield Curve</span>
+                        <span class="metric-value" id="yieldCurve">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Top Sector</span>
+                        <span class="metric-value" id="topSector">-</span>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Disclaimer Footer -->
+        <footer class="disclaimer-footer">
+            <p>AI predictions are for informational purposes only. Not financial advice. Invest at your own risk.</p>
+        </footer>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay hidden">
+            <div class="loader-track">
+                <div class="loader-bar"></div>
+            </div>
+            <div class="loader-text" id="loaderText">PROCESSING MARKET DATA</div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js?v=7"></script>
+</body>
+
+</html>
