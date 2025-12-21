@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 from src import config
 
+
 logger = logging.getLogger(__name__)
 
 # Response cache for consistency: cache_key -> (response, timestamp)
@@ -50,12 +51,12 @@ def _get_cached_response(cache_key: str) -> Optional[Dict]:
 def configure_gemini():
     api_key = config.GEMINI_API_KEY
     if not api_key:
-        # Fallback or error logging
         logger.warning("GEMINI_API_KEY not found in configuration.")
         return False
     
     genai.configure(api_key=api_key)
     return True
+
 
 
 def _build_sector_context(stock_classification: Dict[str, Any]) -> str:

@@ -15,11 +15,7 @@ jinja2
 python-multipart
 aiofiles
 vaderSentiment
-# NEW: XGBoost for improved ML predictions
 xgboost
-# NEW: ARCH library for GARCH volatility forecasting
 arch
-# Testing
 pytest
-# Optional: TensorFlow for LSTM/GRU (falls back to NumPy if not installed)
-# tensorflow>=2.13.0
+pywebview
