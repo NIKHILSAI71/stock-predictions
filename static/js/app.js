@@ -13,6 +13,41 @@ let activeIndicators = {
 };
 let updateInterval = null;
 
+// Prediction Cache Configuration
+const PREDICTION_CACHE_KEY = 'antigravity_predictions';
+const PREDICTION_CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+
+// Cache helper functions
+function getCachedPredictions(symbol) {
+    try {
+        const cache = JSON.parse(localStorage.getItem(PREDICTION_CACHE_KEY) || '{}');
+        const data = cache[symbol.toUpperCase()];
+        if (data && (Date.now() - data.timestamp) < PREDICTION_CACHE_DURATION) {
+            console.log(`Using cached predictions for ${symbol}`);
+            return data;
+        }
+    } catch (e) {
+        console.warn('Error reading prediction cache:', e);
+    }
+    return null;
+}
+
+function cachePredictions(symbol, aiData, enhancedData, signalsData) {
+    try {
+        const cache = JSON.parse(localStorage.getItem(PREDICTION_CACHE_KEY) || '{}');
+        cache[symbol.toUpperCase()] = {
+            timestamp: Date.now(),
+            ai_analysis: aiData,
+            enhanced_prediction: enhancedData,
+            signals: signalsData
+        };
+        localStorage.setItem(PREDICTION_CACHE_KEY, JSON.stringify(cache));
+        console.log(`Cached predictions for ${symbol}`);
+    } catch (e) {
+        console.warn('Error caching predictions:', e);
+    }
+}
+
 // DOM Elements
 const elements = {
     input: document.getElementById('stockSearch'),
@@ -297,6 +332,21 @@ async function handleSearch(isBackground = false) {
                             set('webTraffic', '-');
                         }
                     }
+
+                    // Pass Statistical Arbitrage data to the grid
+                    if (aiData.statistical_arbitrage) {
+                        signalsData.statistical_arbitrage = aiData.statistical_arbitrage;
+                        // Re-call updateDataGrid with the new stat arb data
+                        updateDataGrid(
+                            techData.indicators || {},
+                            fundData.fundamentals || {},
+                            riskData.risk_analysis || {},
+                            patternData.patterns || {},
+                            valData.valuation || {},
+                            altData.alternative_data || {},
+                            signalsData
+                        );
+                    }
                 } else {
                     // AI returned empty data
                     updateAISection({
@@ -317,7 +367,22 @@ async function handleSearch(isBackground = false) {
                 });
             }
 
+            // Cache the predictions for this symbol (to restore on refresh)
+            cachePredictions(symbol,
+                document.getElementById('aiSummary')?.textContent || '',
+                enhancedData,
+                signalsData
+            );
+
             updateStatus('ANALYSIS COMPLETE');
+        } else {
+            // Background refresh - only restore cached predictions if available
+            const cached = getCachedPredictions(symbol);
+            if (cached && cached.enhanced_prediction) {
+                updateTransparencySection(cached.enhanced_prediction);
+                signalsData.enhanced_prediction = cached.enhanced_prediction;
+                signalsData.statistical_arbitrage = cached.signals?.statistical_arbitrage;
+            }
         }
 
         // Show Sections FIRST (so chart container has proper dimensions)
@@ -1149,6 +1214,95 @@ function updateDataGrid(tech, fund, risk, patterns, val, alt, signalsData) {
             }
         }
     }
+
+    // NEW: Pair Trading / Statistical Arbitrage Section
+    const statArb = signalsData.statistical_arbitrage || {};
+    if (statArb && !statArb.error) {
+        const marketPair = statArb.market_pair || {};
+        const sectorPair = statArb.sector_pair || {};
+        const hasOpportunity = statArb.has_opportunity;
+
+        // Use market pair as primary (vs SPY), fallback to sector pair
+        // The pair field contains "SYMBOL/SPY" format
+        const activePair = (marketPair && marketPair.pair) ? marketPair :
+            (sectorPair && sectorPair.pair) ? sectorPair : marketPair;
+        const cointegration = activePair.cointegration || {};
+        const currentSignal = activePair.current_signal || {};
+
+        // Market Pair label - extract from pair field
+        const pairName = activePair.pair || (statArb.sector_etf ? `vs ${statArb.sector_etf}` : 'vs SPY');
+        set('pairMarket', pairName);
+
+        // Cointegration status
+        const cointEl = document.getElementById('pairCointegrated');
+        if (cointEl) {
+            if (cointegration.is_cointegrated) {
+                cointEl.textContent = 'YES';
+                cointEl.className = 'signal-tag text-green';
+            } else {
+                cointEl.textContent = 'NO';
+                cointEl.className = 'signal-tag text-red';
+            }
+        }
+
+        // Z-Score with color coding
+        const zscore = currentSignal.current_zscore;
+        const zscoreEl = document.getElementById('pairZscore');
+        if (zscoreEl && zscore !== undefined) {
+            zscoreEl.textContent = zscore.toFixed(2);
+            if (Math.abs(zscore) >= 2) {
+                zscoreEl.className = 'metric-value text-green'; // Strong signal
+            } else if (Math.abs(zscore) >= 1) {
+                zscoreEl.className = 'metric-value text-yellow'; // Moderate
+            } else {
+                zscoreEl.className = 'metric-value'; // Weak
+            }
+        }
+
+        // Trading Signal
+        const signalEl = document.getElementById('pairSignal');
+        if (signalEl && currentSignal.signal) {
+            signalEl.textContent = currentSignal.signal.replace(/_/g, ' ');
+            if (currentSignal.signal === 'LONG_SPREAD' || currentSignal.signal === 'SHORT_SPREAD') {
+                signalEl.className = 'signal-tag text-green';
+            } else if (currentSignal.signal === 'EXIT' || currentSignal.signal === 'STOP_LOSS') {
+                signalEl.className = 'signal-tag text-yellow';
+            } else {
+                signalEl.className = 'signal-tag';
+            }
+        }
+
+        // Confidence
+        if (currentSignal.confidence !== undefined) {
+            set('pairConfidence', currentSignal.confidence.toFixed(1), '%', currentSignal.confidence > 60);
+        }
+
+        // Half-Life
+        if (cointegration.half_life_days !== undefined) {
+            const hl = cointegration.half_life_days;
+            set('pairHalfLife', hl.toFixed(0), ' days', hl >= 5 && hl <= 30);
+        }
+
+        // Hedge Ratio
+        if (cointegration.hedge_ratio !== undefined) {
+            set('pairHedgeRatio', cointegration.hedge_ratio.toFixed(3));
+        }
+
+        // Opportunity indicator
+        const oppEl = document.getElementById('pairOpportunity');
+        if (oppEl) {
+            if (hasOpportunity) {
+                oppEl.textContent = 'ACTIVE';
+                oppEl.className = 'signal-tag text-green';
+            } else if (cointegration.is_cointegrated) {
+                oppEl.textContent = 'WAITING';
+                oppEl.className = 'signal-tag text-yellow';
+            } else {
+                oppEl.textContent = 'NONE';
+                oppEl.className = 'signal-tag';
+            }
+        }
+    }
 }
 
 function updateMacroContext(macro) {
@@ -1330,15 +1484,8 @@ function updateTransparencySection(data) {
     const metrics = data.model_metrics || {};
     const modelsUsed = data.meta?.models_used || [];
 
-    // Default metrics if missing (simulation for transparency)
-    const displayModels = Object.keys(metrics).length > 0 ? metrics : {
-        'LSTM': { accuracy: 68.5, mape: 4.2 },
-        'XGBoost': { accuracy: 72.1, mape: 3.8 },
-        'GRU': { accuracy: 67.8, mape: 4.5 },
-        'CNN-LSTM': { accuracy: 69.4, mape: 4.1 },
-        'Attention': { accuracy: 70.2, mape: 3.9 },
-        'Ensemble': { accuracy: 74.5, mape: 3.5 }
-    };
+    // Use only real metrics from API - no mock data
+    const displayModels = metrics;
 
     for (const [model, stats] of Object.entries(displayModels)) {
         const div = document.createElement('div');
@@ -1380,12 +1527,49 @@ function updateTransparencySection(data) {
         }
     });
 
-    // 3. Historical Validation
-    const sysAcc = data.system_accuracy || 71.5; // Default if calc pending
-    document.getElementById('systemAccuracy').innerText = sysAcc;
+    // 3. Historical Validation - Only use real data from API
+    const sysAcc = data.system_accuracy;
+    if (sysAcc !== undefined && sysAcc !== null && typeof sysAcc === 'number') {
+        document.getElementById('systemAccuracy').innerText = sysAcc.toFixed(1);
+    } else {
+        document.getElementById('systemAccuracy').innerText = '-';
+    }
 
-    // Simulate or use real stats
-    document.getElementById('validatedCount').innerText = data.validated_count || '1,245';
-    document.getElementById('backtestWinRate').innerText = '64.2%';
-    document.getElementById('strategySharpe').innerText = '1.85';
+    // Use real stats from API only
+    const backtestData = data.backtest || {};
+    const validatedCount = data.validated_count;
+    document.getElementById('validatedCount').innerText = (validatedCount !== undefined && validatedCount !== null && validatedCount > 0) ? validatedCount : '-';
+
+    const winRate = backtestData.win_rate;
+    document.getElementById('backtestWinRate').innerText = (winRate !== undefined && winRate !== null && typeof winRate === 'number') ? winRate.toFixed(1) + '%' : '-';
+
+    const sharpeRatio = backtestData.sharpe_ratio;
+    document.getElementById('strategySharpe').innerText = (sharpeRatio !== undefined && sharpeRatio !== null && typeof sharpeRatio === 'number') ? sharpeRatio.toFixed(2) : '-';
+
+    // Model Consensus - Calculate from model metrics
+    const modelMetrics = data.model_metrics || {};
+    const modelCount = Object.keys(modelMetrics).length;
+    if (modelCount > 0) {
+        // Count directions
+        let bullish = 0, bearish = 0, neutral = 0;
+        for (const [name, info] of Object.entries(modelMetrics)) {
+            const dir = (info.direction || '').toLowerCase();
+            if (dir === 'bullish') bullish++;
+            else if (dir === 'bearish') bearish++;
+            else neutral++;
+        }
+        const maxAgree = Math.max(bullish, bearish, neutral);
+        const consensusEl = document.getElementById('modelConsensus');
+        if (consensusEl) {
+            consensusEl.innerText = `${maxAgree}/${modelCount}`;
+            // Update bar width
+            const barFill = consensusEl.closest('.track-stat')?.querySelector('.track-stat-fill');
+            if (barFill) {
+                barFill.style.width = `${(maxAgree / modelCount) * 100}%`;
+            }
+        }
+    } else {
+        const consensusEl = document.getElementById('modelConsensus');
+        if (consensusEl) consensusEl.innerText = '-';
+    }
 }

@@ -232,7 +232,7 @@
 
                     <!-- Model Consensus -->
                     <div class="track-stat">
-                        <span class="track-stat-value" id="modelConsensus">6/6</span>
+                        <span class="track-stat-value" id="modelConsensus">-</span>
                         <span class="track-stat-label">MODELS IN AGREEMENT</span>
                         <div class="track-stat-bar">
                             <div class="track-stat-fill" style="width: 100%;"></div>
@@ -645,6 +645,43 @@
                     </div>
                 </div>
 
+                <!-- PAIR TRADING Column (NEW - Statistical Arbitrage) -->
+                <div class="data-column">
+                    <div class="col-header">PAIR TRADING</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Market Pair</span>
+                        <span class="metric-value" id="pairMarket">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Cointegrated</span>
+                        <span class="signal-tag" id="pairCointegrated">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Z-Score</span>
+                        <span class="metric-value" id="pairZscore">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Signal</span>
+                        <span class="signal-tag" id="pairSignal">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Confidence</span>
+                        <span class="metric-value" id="pairConfidence">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Half-Life</span>
+                        <span class="metric-value" id="pairHalfLife">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Hedge Ratio</span>
+                        <span class="metric-value" id="pairHedgeRatio">-</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Opportunity</span>
+                        <span class="signal-tag" id="pairOpportunity">-</span>
+                    </div>
+                </div>
+
                 <!-- Patterns & Sentiment Column -->
                 <div class="data-column">
                     <div class="col-header">PATTERNS & SENTIMENT</div>
@@ -708,7 +745,7 @@
         </div>
     </div>
 
-    <script src="./js/app.js?v=7"></script>
+    <script src="./js/app.js?v=12"></script>
 </body>
 
 </html>

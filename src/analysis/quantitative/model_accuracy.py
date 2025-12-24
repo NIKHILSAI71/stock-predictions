@@ -238,23 +238,14 @@ def get_model_accuracy_summary(symbol: str = None) -> Dict[str, Any]:
     validated = [p for p in predictions if p.get('validated', False)]
     
     if not validated:
-        # Return default metrics if no history
+        # No validated predictions yet - return pending status
         return {
-            'system_accuracy': 65.0,  # Default baseline
-            'total_predictions': 0,
+            'status': 'pending',
+            'system_accuracy': None,
+            'total_predictions': len(predictions),
             'validated_predictions': 0,
-            'models': {
-                'lstm': {'accuracy': 65.0, 'mape': 5.0, 'status': 'baseline'},
-                'xgboost': {'accuracy': 68.0, 'mape': 4.5, 'status': 'baseline'},
-                'gru': {'accuracy': 64.0, 'mape': 5.2, 'status': 'baseline'},
-                'cnn_lstm': {'accuracy': 66.0, 'mape': 4.8, 'status': 'baseline'},
-                'attention': {'accuracy': 67.0, 'mape': 4.6, 'status': 'baseline'},
-                'random_forest': {'accuracy': 62.0, 'mape': 5.5, 'status': 'baseline'},
-                'svm': {'accuracy': 60.0, 'mape': 5.8, 'status': 'baseline'},
-                'momentum': {'accuracy': 58.0, 'mape': 6.0, 'status': 'baseline'},
-                'ensemble': {'accuracy': 71.0, 'mape': 4.0, 'status': 'baseline'}
-            },
-            'note': 'Baseline estimates - accuracy improves with validated history'
+            'models': {},
+            'note': 'Accuracy metrics will appear after predictions are verified against actual outcomes'
         }
     
     # Calculate actual metrics
@@ -354,20 +345,60 @@ def generate_price_targets(
 
 def get_backtest_summary(symbol: str = None) -> Dict[str, Any]:
     """
-    Get backtesting performance summary.
+    Get backtesting performance summary from actual prediction history.
     
-    Returns simulated/calculated backtest metrics.
+    Returns dynamically calculated backtest metrics.
     """
-    # This would ideally run actual backtests, but for now returns calculated metrics
+    predictions = get_prediction_history()
+    
+    # Filter by symbol if provided
+    if symbol:
+        predictions = [p for p in predictions if p.get('symbol') == symbol.upper()]
+    
+    # Only use validated predictions
+    validated = [p for p in predictions if p.get('validated', False)]
+    
+    if not validated:
+        # No validated predictions yet - return status indicating this
+        return {
+            'status': 'pending',
+            'message': 'No validated predictions yet. Metrics will appear after predictions are verified.',
+            'total_predictions': len(predictions),
+            'validated_count': 0
+        }
+    
+    # Calculate metrics from validated predictions
+    total_trades = len(validated)
+    correct = sum(1 for p in validated if p.get('was_correct', False))
+    win_rate = (correct / total_trades * 100) if total_trades > 0 else 0
+    
+    # Calculate average gains/losses
+    gains = [p.get('actual_change_pct', 0) for p in validated if p.get('was_correct', False) and p.get('actual_change_pct', 0) > 0]
+    losses = [p.get('actual_change_pct', 0) for p in validated if not p.get('was_correct', False) and p.get('actual_change_pct', 0) < 0]
+    
+    avg_gain = np.mean(gains) if gains else 0
+    avg_loss = np.mean(losses) if losses else 0
+    
+    # Profit factor = Total Gains / Total Losses (in absolute terms)
+    total_gains = sum(gains) if gains else 0
+    total_losses = abs(sum(losses)) if losses else 1  # Avoid division by zero
+    profit_factor = total_gains / total_losses if total_losses > 0 else 0
+    
+    # Simple Sharpe ratio approximation (returns / volatility)
+    returns = [p.get('actual_change_pct', 0) for p in validated]
+    avg_return = np.mean(returns) if returns else 0
+    std_return = np.std(returns) if len(returns) > 1 else 1
+    sharpe_ratio = (avg_return / std_return) * np.sqrt(252 / 5) if std_return > 0 else 0  # Annualized for 5-day predictions
+    
     return {
-        'strategy': 'Ensemble Multi-Model',
-        'period': '1 Year',
-        'total_trades': 156,
-        'win_rate': 62.5,
-        'avg_gain': 2.3,
-        'avg_loss': -1.8,
-        'profit_factor': 1.45,
-        'max_drawdown': -12.5,
-        'sharpe_ratio': 1.32,
-        'note': 'Based on historical signal backtesting'
+        'status': 'active',
+        'total_predictions': len(predictions),
+        'validated_count': total_trades,
+        'win_rate': round(win_rate, 1),
+        'avg_gain': round(avg_gain, 2),
+        'avg_loss': round(avg_loss, 2),
+        'profit_factor': round(profit_factor, 2),
+        'sharpe_ratio': round(sharpe_ratio, 2),
+        'last_updated': datetime.now().isoformat()
     }
+

@@ -67,6 +67,11 @@ from .model_accuracy import (
     calculate_confidence_interval, calculate_price_confidence_interval,
     get_model_accuracy_summary, generate_price_targets, get_backtest_summary
 )
+# NEW: Statistical Arbitrage / Pair Trading
+from .statistical_arbitrage import (
+    test_cointegration, calculate_spread, calculate_zscore,
+    generate_pair_signals, find_cointegrated_pairs, get_pair_trading_analysis
+)
 
 __all__ = [
 
@@ -114,6 +119,9 @@ __all__ = [
     # NEW: Model Accuracy
     'calculate_mape', 'calculate_rmse', 'calculate_directional_accuracy',
     'calculate_confidence_interval', 'calculate_price_confidence_interval',
-    'get_model_accuracy_summary', 'generate_price_targets', 'get_backtest_summary'
+    'get_model_accuracy_summary', 'generate_price_targets', 'get_backtest_summary',
+    # NEW: Statistical Arbitrage / Pair Trading
+    'test_cointegration', 'calculate_spread', 'calculate_zscore',
+    'generate_pair_signals', 'find_cointegrated_pairs', 'get_pair_trading_analysis'
 ]
 
