@@ -660,8 +660,33 @@ body {
 .ai-main-summary p {
     font-size: 1.1rem;
     font-weight: 300;
-    margin-bottom: 2rem;
+    margin-bottom: 0;
     line-height: 1.8;
+    flex: 1;
+}
+
+/* Summary with sources on right */
+.summary-with-sources {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+}
+
+.sources-sidebar {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+    min-width: 80px;
+}
+
+.sources-title {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
 }
 
 .recommendation-box {
@@ -842,6 +867,204 @@ body {
     color: #ef5350;
     width: 1rem;
     text-align: center;
+}
+
+/* News Sources Stack - Bottom Right Inline */
+.news-sources-stack {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.8rem;
+    margin-top: 0;
+}
+
+.news-sources-container {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+}
+
+.news-sources-label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.source-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #1a1a1a;
+    /* Added gray outline as requested */
+    border: 1px solid #444;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    font-weight: 600;
+    color: #fff;
+    text-transform: uppercase;
+    /* Stacked effect: negative margin */
+    margin-left: -8px;
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.2s ease, border-color 0.2s ease, z-index 0.2s ease;
+}
+
+.source-icon:first-child {
+    margin-left: 0;
+}
+
+.source-icon:hover {
+    transform: scale(1.2);
+    z-index: 100;
+    border-color: #888;
+}
+
+.source-icon img {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    object-fit: contain;
+}
+
+.source-icon.is-trusted {
+    border-color: #4caf50;
+}
+
+.source-icon-more {
+    background: #333;
+    border-color: #555;
+    font-size: 0.5rem;
+    letter-spacing: 0;
+    cursor: pointer;
+}
+
+.source-icon-more:hover {
+    background: #444;
+    border-color: #888;
+}
+
+/* Source tooltip */
+.source-icon::after {
+    content: attr(data-source);
+    position: absolute;
+    bottom: 110%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #000;
+    color: #fff;
+    font-size: 0.6rem;
+    padding: 3px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    z-index: 1000;
+    border: 1px solid #333;
+}
+
+.source-icon:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Expanded Sources Section */
+.news-sources-expanded {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #0d0d0d;
+    border: 1px solid #222;
+    border-radius: 6px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.news-sources-expanded.hidden {
+    display: none;
+}
+
+.news-sources-expanded-header {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    margin-bottom: 0.8rem;
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.news-sources-close {
+    cursor: pointer;
+    color: #666;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.news-sources-close:hover {
+    color: #fff;
+}
+
+.news-source-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid #1a1a1a;
+}
+
+.news-source-item:last-child {
+    border-bottom: none;
+}
+
+.news-source-item .source-favicon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.news-source-item a {
+    color: #ccc;
+    text-decoration: none;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    transition: color 0.2s ease;
+}
+
+.news-source-item a:hover {
+    color: #fff;
+    text-decoration: underline;
+}
+
+.news-source-item .source-name {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: #666;
+    margin-top: 0.2rem;
+}
+
+@media (max-width: 768px) {
+    .source-icon {
+        width: 22px;
+        height: 22px;
+        margin-left: -6px;
+    }
+
+    .source-icon img {
+        width: 12px;
+        height: 12px;
+    }
 }
 
 /* Chart Section */
@@ -1624,4 +1847,86 @@ body {
     .wcgw-text {
         font-size: 0.75rem;
     }
+}
+
+/* News Sources Grid (New 2-Column Layout) */
+.news-sources-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+@media (max-width: 768px) {
+    .news-sources-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.news-source-item {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 0.8rem;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: var(--text-main);
+}
+
+.news-source-item:hover {
+    background: #222;
+    border-color: var(--border-focus);
+    transform: translateY(-2px);
+}
+
+.source-favicon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    object-fit: contain;
+    background-color: #fff;
+    /* Ensure transparent favicons show up */
+    padding: 2px;
+}
+
+.source-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex: 1;
+}
+
+.source-title {
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.source-name {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+}
+
+/* Expand Icon Rotation */
+.expand-icon {
+    transition: transform 0.3s ease;
+}
+
+.rotate-180 {
+    transform: rotate(180deg);
+}
+
+/* Hide the old stack styles if no longer needed, or keep for safety */
+.news-sources-stack {
+    display: none;
+    /* We are moving to grid */
 }

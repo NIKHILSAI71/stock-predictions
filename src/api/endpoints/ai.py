@@ -133,6 +133,12 @@ async def get_ai_analysis(symbol: str):
             max_per_query=5
         )
         
+        # Verify news data before AI prediction
+        import sys
+        articles_with_deep_content_count = sum(1 for n in comprehensive_news if n.get('content') and len(n.get('content', '')) > 100)
+        print(f"\033[92mINFO:     NEWS DATA READY FOR AI: {len(comprehensive_news)} articles ({articles_with_deep_content_count} with full content)\033[0m")
+        sys.stdout.flush()  # Ensure correct console output ordering
+        
         # Also get basic sentiment score (but we'll override news_context with comprehensive data)
         sentiment = get_market_sentiment_search(symbol)
         
@@ -301,6 +307,8 @@ async def get_ai_analysis(symbol: str):
             stat_arb_analysis = {"error": str(e)}
         
         # Use comprehensive news gathered earlier (20+ sources)
+        print(f"\033[95mINFO:     CALLING AI MODEL with {len(comprehensive_news)} news articles\033[0m")
+        sys.stdout.flush()
         
         ai_insights = generate_market_insights(
             stock_symbol=symbol,

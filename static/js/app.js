@@ -331,6 +331,112 @@ async function handleSearch(isBackground = false) {
                         } else {
                             set('webTraffic', '-');
                         }
+
+                        // NEWS SOURCES STACK - Use real fetched sources from news_context
+                        const newsStackEl = document.getElementById('newsSourcesStack');
+                        const newsExpandedEl = document.getElementById('newsSourcesExpanded');
+                        const newsContext = alt.social_sentiment?.news_context || [];
+
+                        if (newsStackEl && newsContext.length > 0) {
+                            newsStackEl.innerHTML = '';
+                            if (newsExpandedEl) newsExpandedEl.innerHTML = '';
+                            if (newsExpandedEl) newsExpandedEl.classList.add('hidden');
+
+                            // Add SOURCES label (restored for red markup style)
+                            const label = document.createElement('span');
+                            label.className = 'news-sources-label';
+                            label.textContent = 'SOURCES:';
+                            newsStackEl.appendChild(label);
+
+                            const container = document.createElement('div');
+                            container.className = 'news-sources-container';
+
+                            const maxVisible = 4; // Increased to 4 matching the drawing
+                            const visibleSources = newsContext.slice(0, maxVisible);
+                            const overflowCount = newsContext.length - maxVisible;
+
+                            // Extract domain from URL
+                            const getDomainFromUrl = (url) => {
+                                if (!url) return null;
+                                try {
+                                    return new URL(url).hostname;
+                                } catch (e) {
+                                    return null;
+                                }
+                            };
+
+                            visibleSources.forEach((source, index) => {
+                                const icon = document.createElement('div');
+                                icon.className = 'source-icon' + (source.is_trusted ? ' is-trusted' : '');
+                                icon.style.zIndex = maxVisible - index;
+                                icon.setAttribute('data-source', source.source || 'Unknown');
+                                icon.title = source.title || source.source || 'News Source';
+
+                                const domain = getDomainFromUrl(source.link);
+                                if (domain) {
+                                    const img = document.createElement('img');
+                                    img.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+                                    img.alt = source.source || '';
+                                    img.onerror = () => {
+                                        icon.textContent = (source.source || 'UN').substring(0, 2).toUpperCase();
+                                        img.remove();
+                                    };
+                                    icon.appendChild(img);
+                                } else {
+                                    icon.textContent = (source.source || 'UN').substring(0, 2).toUpperCase();
+                                }
+
+                                container.appendChild(icon);
+                            });
+
+                            // +N button with click to expand
+                            if (overflowCount > 0) {
+                                const moreIcon = document.createElement('div');
+                                moreIcon.className = 'source-icon source-icon-more';
+                                moreIcon.style.zIndex = 0;
+                                moreIcon.textContent = `+${overflowCount}`;
+                                moreIcon.setAttribute('data-source', `Click to see all ${newsContext.length} sources`);
+
+                                // Click handler to expand sources
+                                moreIcon.addEventListener('click', () => {
+                                    if (newsExpandedEl) {
+                                        newsExpandedEl.classList.toggle('hidden');
+                                    }
+                                });
+
+                                container.appendChild(moreIcon);
+                            }
+
+                            newsStackEl.appendChild(container);
+
+                            // Populate expanded sources section
+                            if (newsExpandedEl && newsContext.length > 0) {
+                                const header = document.createElement('div');
+                                header.className = 'news-sources-expanded-header';
+                                header.innerHTML = `<span>ALL SOURCES (${newsContext.length})</span><span class="news-sources-close">×</span>`;
+                                header.querySelector('.news-sources-close').addEventListener('click', () => {
+                                    newsExpandedEl.classList.add('hidden');
+                                });
+                                newsExpandedEl.appendChild(header);
+
+                                newsContext.forEach(source => {
+                                    const item = document.createElement('div');
+                                    item.className = 'news-source-item';
+
+                                    const domain = getDomainFromUrl(source.link);
+                                    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : '';
+
+                                    item.innerHTML = `
+                                        ${faviconUrl ? `<img class="source-favicon" src="${faviconUrl}" alt="">` : ''}
+                                        <div>
+                                            <a href="${source.link || '#'}" target="_blank" rel="noopener">${source.title || 'Untitled'}</a>
+                                            <div class="source-name">${source.source || 'Unknown Source'}</div>
+                                        </div>
+                                    `;
+                                    newsExpandedEl.appendChild(item);
+                                });
+                            }
+                        }
                     }
 
                     // Pass Statistical Arbitrage data to the grid
@@ -465,9 +571,57 @@ function updateHeader(data) {
 function updateAISection(ai) {
     if (!ai) return;
 
+    // Helper to clean formatting (remove markdown and Title: prefixes)
+    const cleanText = (text) => {
+        if (!text) return text;
+        // 1. Remove markdown bold/italic (**text** to text)
+        let cleaned = text.replace(/(\*\*|__)(.*?)\1/g, '$2').replace(/(\*|_)(.*?)\1/g, '$2');
+
+        // 2. Remove leading bullet points/hyphens
+        cleaned = cleaned.replace(/^[\s-•]+/, '');
+
+        // 3. Remove "Title:" prefix if present (heuristic: colon in first 50 chars)
+        // Only if it looks like a title (short enough)
+        const colonMatch = cleaned.match(/^(.{3,60}?):\s*/);
+        if (colonMatch) {
+            cleaned = cleaned.substring(colonMatch[0].length).trim();
+        }
+
+        // 4. Ensure it starts with uppercase
+        if (cleaned.length > 0) {
+            cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+        }
+        return cleaned;
+    };
+
     // 1. SUMMARY
     let summaryText = ai.agent_summary || ai.summary || "Analysis unavailable.";
-    elements.aiSummary.textContent = summaryText;
+    elements.aiSummary.textContent = cleanText(summaryText);
+
+    // [NEW] Error Handling: Check for failure keywords
+    const isError = /failed|error|unable to/i.test(summaryText);
+
+    // Elements to toggle
+    const actionRow = document.querySelector('.ai-action-row');
+    const detailsGrid = document.querySelector('.ai-details-grid');
+    const newsStack = document.getElementById('newsSourcesStack');
+
+    if (isError) {
+        // Hide details if error
+        if (actionRow) actionRow.style.display = 'none';
+        if (detailsGrid) detailsGrid.style.display = 'none';
+        if (newsStack) newsStack.style.display = 'none';
+
+        // Optional: Style the summary to indicate error
+        elements.aiSummary.style.color = '#ef5350'; // Red tint
+        return; // Stop further processing
+    } else {
+        // Restore visibility if success
+        if (actionRow) actionRow.style.display = 'flex'; // or block/grid depending on css
+        if (detailsGrid) detailsGrid.style.display = 'grid'; // .ai-details-grid is grid
+        if (newsStack) newsStack.style.display = 'grid'; // we changed this to grid
+        elements.aiSummary.style.color = ''; // Reset color
+    }
 
     // 2. RECOMMENDATION & TIMEFRAME
     let rec = "HOLD";
@@ -515,6 +669,75 @@ function updateAISection(ai) {
     }
     if (actionEl) actionEl.textContent = action;
 
+    // NEWS SOURCES GRID - Display refined 2-column grid of ALL sources
+    const newsStackEl = document.getElementById('newsSourcesStack');
+
+    // We are reusing the 'newsSourcesStack' ID in HTML but changing its styling class via JS or CSS override
+    if (newsStackEl) {
+        newsStackEl.innerHTML = '';
+        newsStackEl.className = 'news-sources-grid'; // Force new class
+
+        let sources = [];
+        if (ai.web_intelligence_summary && ai.web_intelligence_summary.key_news_items) {
+            sources = ai.web_intelligence_summary.key_news_items.map(item => ({
+                name: item.source || 'Unknown',
+                headline: item.headline || '',
+                link: item.link || '',
+                isTrusted: true
+            }));
+        } else if (ai.news_context) {
+            // Fallback to older field if web_intelligence_summary not present
+            sources = ai.news_context;
+        }
+
+        if (sources.length > 0) {
+            // Extract domain from URL
+            const getDomainFromUrl = (url) => {
+                if (!url) return null;
+                try {
+                    const urlObj = new URL(url);
+                    return urlObj.hostname;
+                } catch (e) {
+                    return null;
+                }
+            };
+
+            // Render ALL sources - no slicing/stacking
+            sources.forEach(source => {
+                const item = document.createElement('a');
+                item.href = source.link || '#';
+                item.target = '_blank';
+                item.rel = 'noopener';
+                item.className = 'news-source-item';
+
+                const domain = getDomainFromUrl(source.link);
+                const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null;
+
+                let iconHTML = '';
+                if (faviconUrl) {
+                    iconHTML = `<img class="source-favicon" src="${faviconUrl}" alt="${source.name}" onerror="this.style.display='none'">`;
+                }
+
+                item.innerHTML = `
+                    ${iconHTML}
+                    <div class="source-content">
+                        <div class="source-title" title="${source.headline || source.title}">${source.headline || source.title || 'Market News'}</div>
+                        <div class="source-name">${(source.name || source.source || 'Source').toUpperCase()}</div>
+                    </div>
+                `;
+
+                newsStackEl.appendChild(item);
+            });
+        } else {
+            // Optional: Show message if no sources
+            const noSources = document.createElement('div');
+            noSources.style.gridColumn = "1 / -1";
+            noSources.style.color = "#666";
+            noSources.style.fontSize = "0.8rem";
+            noSources.textContent = "No specific sources cited directly.";
+            newsStackEl.appendChild(noSources);
+        }
+    }
 
     // 3. SCENARIOS (Bull/Base/Bear) - Insert before Details Grid
     let scenariosEl = document.getElementById('aiScenarios');
@@ -556,7 +779,7 @@ function updateAISection(ai) {
                 card.innerHTML = `
                     <div style="font-size: 0.7rem; color: #666; font-family: var(--font-mono); margin-bottom: 0.5rem;">${c.title} <span style="float:right">${data.probability || ''}</span></div>
                     <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem;" class="${c.color}">${data.target || '-'}</div>
-                    <div style="font-size: 0.8rem; line-height: 1.4; color: #aaa;">${data.catalyst || data.driver || data.thesis || data.risk || ''}</div>
+                    <div style="font-size: 0.8rem; line-height: 1.4; color: #aaa;">${cleanText(data.catalyst || data.driver || data.thesis || data.risk || '')}</div>
                 `;
                 scenariosEl.appendChild(card);
             }
@@ -581,9 +804,11 @@ function updateAISection(ai) {
             span.style.color = badge.color === 'red' ? '#ef5350' :
                 (badge.color === 'yellow' ? '#feca57' : '#ccc');
             li.appendChild(span);
-            li.appendChild(document.createTextNode(text));
+            // Clean text for drivers/risks
+            li.appendChild(document.createTextNode(cleanText(text)));
         } else {
-            li.textContent = text;
+            // Clean text
+            li.textContent = cleanText(text);
         }
         return li;
     };
@@ -1458,14 +1683,33 @@ function formatLarge(num) {
     return num.toLocaleString();
 }
 
-function toggleSection(id) {
+function toggleSection(id, btnElement) { // btnElement is optional if not passed
     const el = document.getElementById(id);
+    // Find the icon if not passed directly (assuming it's in the caller or nearby)
+    // The onclick in HTML is: toggleSection('transparencyDetails')
+    // We can find the icon by DOM traversal relative to the section ID or just query it if unique.
+    // For 'transparencyDetails', the button is .panel-header-small
+
+    // Better approach: toggle the class on the icon inside the previous sibling of the content
+    // or just find .expand-icon inside the header above this content
+
+    let icon = null;
+    if (el) {
+        // Assume the header is immediately before the content div
+        const header = el.previousElementSibling;
+        if (header) {
+            icon = header.querySelector('.expand-icon');
+        }
+    }
+
     if (el.style.display === 'none' || el.classList.contains('hidden')) {
         el.style.display = 'block';
         el.classList.remove('hidden');
+        if (icon) icon.classList.add('rotate-180');
     } else {
         el.style.display = 'none';
         el.classList.add('hidden');
+        if (icon) icon.classList.remove('rotate-180');
     }
 }
 

@@ -86,6 +86,15 @@
                 <div class="ai-main-summary">
                     <h4>EXECUTIVE SUMMARY</h4>
                     <p id="aiSummary" class="typing-effect">Initializing analysis</p>
+
+                    <!-- News Sources (at bottom right) -->
+                    <div id="newsSourcesStack" class="news-sources-stack">
+                        <!-- Populated dynamically by JS -->
+                    </div>
+
+                    <div id="newsSourcesExpanded" class="news-sources-expanded hidden">
+                        <!-- Expanded sources list - populated by JS -->
+                    </div>
                 </div>
 
                 <!-- 2. Middle: Drivers & Risks (Side-by-Side) -->
@@ -147,7 +156,10 @@
             <section id="modelTransparency" class="transparency-panel hidden">
                 <div class="panel-header-small" onclick="toggleSection('transparencyDetails')">
                     <h4>MODEL TRANSPARENCY & ACCURACY</h4>
-                    <span class="expand-icon">+</span>
+                    <svg class="expand-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <path d="M6 9l6 6 6-6"></path>
+                    </svg>
                 </div>
                 <div id="transparencyDetails" class="transparency-content">
                     <div class="models-grid" id="modelsGrid">
