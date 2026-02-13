@@ -68,7 +68,15 @@ def get_sector_performance(period: str = '3mo') -> Dict[str, Any]:
         except Exception as e:
             performance[sector] = {'error': str(e)}
     
-    return performance
+    # Sort by performance to get top/worst performers
+    valid_sectors = {k: v for k, v in performance.items() if 'return_pct' in v}
+    sorted_sectors = sorted(valid_sectors.keys(), key=lambda x: valid_sectors[x]['return_pct'], reverse=True)
+    
+    return {
+        'sectors': performance,
+        'top_performers': sorted_sectors[:3] if sorted_sectors else [],
+        'worst_performers': sorted_sectors[-3:] if len(sorted_sectors) >= 3 else sorted_sectors
+    }
 
 
 def rank_sectors(performance: Dict[str, Any]) -> List[str]:
@@ -76,12 +84,14 @@ def rank_sectors(performance: Dict[str, Any]) -> List[str]:
     Rank sectors by performance.
     
     Args:
-        performance: Sector performance dictionary
+        performance: Sector performance dictionary (can be raw or wrapped in 'sectors' key)
     
     Returns:
         List of sectors ordered by return
     """
-    valid = {k: v for k, v in performance.items() if 'return_pct' in v}
+    # Handle both old format (direct dict) and new format (wrapped in 'sectors')
+    sectors_data = performance.get('sectors', performance)
+    valid = {k: v for k, v in sectors_data.items() if isinstance(v, dict) and 'return_pct' in v}
     sorted_sectors = sorted(valid.keys(), key=lambda x: valid[x]['return_pct'], reverse=True)
     return sorted_sectors
 

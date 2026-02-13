@@ -4,10 +4,13 @@ import os
 import json
 import hashlib
 import logging
+import time
+import asyncio
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 
 from src import config
+from src.core.api_limiter import get_api_coordinator
 
 
 logger = logging.getLogger(__name__)
@@ -16,6 +19,10 @@ logger = logging.getLogger(__name__)
 _response_cache: Dict[str, Tuple[Dict, datetime]] = {}
 CACHE_TTL = 300  # 5 minutes
 
+# Rate limiting: track last API call time
+_last_api_call_time: Optional[float] = None
+_min_api_call_interval = 1.0  # Minimum 1 second between API calls
+
 # Consistency config - low temperature for stable outputs
 CONSISTENCY_CONFIG = {
     'temperature': 0.1,  # CRITICAL: Low temp for consistent outputs
@@ -23,6 +30,118 @@ CONSISTENCY_CONFIG = {
     'top_k': 40,
     'max_output_tokens': 4096,
 }
+
+
+def _rate_limit_wait():
+    """
+    Enforce minimum interval between API calls to avoid rate limits.
+    """
+    global _last_api_call_time
+
+    if _last_api_call_time is not None:
+        elapsed = time.time() - _last_api_call_time
+        if elapsed < _min_api_call_interval:
+            wait_time = _min_api_call_interval - elapsed
+            logger.debug(
+                f"Rate limiting: waiting {wait_time:.2f}s before API call")
+            time.sleep(wait_time)
+
+    _last_api_call_time = time.time()
+
+
+def _retry_with_exponential_backoff(func, max_retries=4, base_delay=3):
+    """
+    Retry a function with exponential backoff for rate limit errors.
+
+    Args:
+        func: Callable function to retry
+        max_retries: Maximum number of retry attempts (default: 4)
+        base_delay: Base delay in seconds (default: 3)
+
+    Returns:
+        Result from function call
+    """
+    for attempt in range(max_retries):
+        try:
+            # Apply rate limiting before each attempt
+            _rate_limit_wait()
+            return func()
+        except Exception as e:
+            error_msg = str(e)
+            # Check for rate limit errors (429) or resource exhausted
+            if "429" in error_msg or "Resource exhausted" in error_msg or "quota" in error_msg.lower():
+                if attempt < max_retries - 1:
+                    wait_time = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Rate limit hit, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries}): {error_msg}")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(
+                        f"Rate limit error after {max_retries} retries: {e}")
+                    raise
+            else:
+                # For non-rate-limit errors, raise immediately
+                logger.error(f"API error (non-rate-limit): {e}")
+                raise
+    return None
+
+
+def _call_gemini_with_coordinator(model, prompt: str, use_coordinator: bool = True):
+    """
+    Call Gemini API with circuit breaker and rate limiting protection.
+
+    Args:
+        model: Gemini model instance
+        prompt: Prompt to send to model
+        use_coordinator: Whether to use API coordinator (default: True)
+
+    Returns:
+        Model response
+
+    Raises:
+        Exception: If API call fails or circuit breaker is open
+    """
+    def _generate_content_sync():
+        """Sync wrapper for model.generate_content()"""
+        _rate_limit_wait()
+        return model.generate_content(prompt)
+
+    # Try to use coordinator if in async context
+    if use_coordinator:
+        try:
+            # Check if we're in an async context
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're in an async context, use coordinator
+                coordinator = get_api_coordinator()
+
+                async def _async_generate():
+                    """Async wrapper for sync generate_content call"""
+                    return await asyncio.to_thread(_generate_content_sync)
+
+                # Create task and wait for it
+                future = asyncio.ensure_future(
+                    coordinator.call_gemini_api(_async_generate)
+                )
+                # Wait for completion (blocking in sync function)
+                return asyncio.get_event_loop().run_until_complete(future)
+            else:
+                # No event loop, fall back to retry logic
+                return _retry_with_exponential_backoff(_generate_content_sync)
+        except RuntimeError:
+            # No event loop, fall back to retry logic
+            return _retry_with_exponential_backoff(_generate_content_sync)
+        except Exception as e:
+            if "Circuit breaker OPEN" in str(e):
+                logger.warning(
+                    "Circuit breaker is OPEN, API temporarily unavailable")
+                raise Exception(
+                    "AI service temporarily unavailable due to rate limiting")
+            raise
+    else:
+        # Use traditional retry logic without coordinator
+        return _retry_with_exponential_backoff(_generate_content_sync)
 
 
 def _create_cache_key(symbol: str, data: Dict) -> str:
@@ -50,13 +169,22 @@ def _get_cached_response(cache_key: str) -> Optional[Dict]:
 # Configure API key safely
 def configure_gemini():
     api_key = config.GEMINI_API_KEY
-    if not api_key:
-        logger.warning("GEMINI_API_KEY not found in configuration.")
+    if not api_key or api_key == "your_gemini_api_key_here":
+        logger.error(
+            " GEMINI_API_KEY not found or using placeholder value in .env file")
+        logger.error("   Please set a valid GEMINI_API_KEY in your .env file")
+        logger.error(
+            "   Get your API key from: https://makersuite.google.com/app/apikey")
         return False
-    
-    genai.configure(api_key=api_key)
-    return True
 
+    try:
+        genai.configure(api_key=api_key)
+        logger.info(
+            f" Gemini API configured successfully with model: {config.GEMINI_MODEL}")
+        return True
+    except Exception as e:
+        logger.error(f" Failed to configure Gemini API: {e}")
+        return False
 
 
 def _build_sector_context(stock_classification: Dict[str, Any]) -> str:
@@ -66,15 +194,18 @@ def _build_sector_context(stock_classification: Dict[str, Any]) -> str:
     """
     if not stock_classification:
         return "No classification data available - use default S&P 500 benchmarks."
-    
+
     sector = stock_classification.get('sector', 'Unknown')
     stock_type = stock_classification.get('stock_type', 'growth')
     market_cap_tier = stock_classification.get('market_cap_tier', 'unknown')
     sector_avg_pe = stock_classification.get('sector_avg_pe', 17.8)
-    volatility_profile = stock_classification.get('volatility_profile', 'moderate')
-    is_commodity_linked = stock_classification.get('is_commodity_linked', False)
-    is_rate_sensitive = stock_classification.get('is_interest_rate_sensitive', False)
-    
+    volatility_profile = stock_classification.get(
+        'volatility_profile', 'moderate')
+    is_commodity_linked = stock_classification.get(
+        'is_commodity_linked', False)
+    is_rate_sensitive = stock_classification.get(
+        'is_interest_rate_sensitive', False)
+
     # Sector-specific analysis rules
     sector_rules = {
         'Technology': """
@@ -169,7 +300,7 @@ SECTOR-SPECIFIC RULES FOR INDUSTRIALS:
 - Capex trends matter
 """
     }
-    
+
     # Build context string
     context = f"""
 Stock Classification:
@@ -183,14 +314,13 @@ Stock Classification:
 
 {sector_rules.get(sector, 'Use balanced fundamental + technical approach.')}
 """
-    
+
     # Add warnings if any
     warnings = stock_classification.get('warnings', [])
     if warnings:
         context += "\nWARNINGS:\n" + "\n".join(f"- {w}" for w in warnings)
-    
-    return context
 
+    return context
 
 
 def generate_search_query(symbol: str, data_context: Dict[str, Any]) -> str:
@@ -200,14 +330,15 @@ def generate_search_query(symbol: str, data_context: Dict[str, Any]) -> str:
     """
     if not configure_gemini():
         return f"{symbol} stock news latest analysis"
-        
+
     model = genai.GenerativeModel(config.GEMINI_MODEL)
-    
+
     # Create a mini-summary for the prompt
-    signal = data_context.get('universal_system_signal', {}).get('signal', 'UNKNOWN')
+    signal = data_context.get(
+        'universal_system_signal', {}).get('signal', 'UNKNOWN')
     technicals = data_context.get('technicals', {})
     price_change = technicals.get('price_change_pct', 0)
-    
+
     prompt = f"""
     You are a Financial News Researcher. 
     Stock: {symbol}
@@ -221,7 +352,7 @@ def generate_search_query(symbol: str, data_context: Dict[str, Any]) -> str:
     
     Return ONLY the query string. No quotes.
     """
-    
+
     try:
         response = model.generate_content(prompt)
         query = response.text.strip().replace('"', '')
@@ -234,7 +365,7 @@ def generate_search_queries(symbol: str, data_context: Dict[str, Any]) -> List[s
     """
     AI-powered comprehensive research query generator.
     Generates 8-12 targeted queries covering ALL aspects a professional analyst would research.
-    
+
     Query Categories:
     1. Breaking news & recent catalysts
     2. Earnings & revenue analysis
@@ -248,7 +379,7 @@ def generate_search_queries(symbol: str, data_context: Dict[str, Any]) -> List[s
     10. Macro economic impact
     11. Options & derivatives activity
     12. Valuation & fair value analysis
-    
+
     Returns:
         List of 8-12 specific search queries for comprehensive research
     """
@@ -264,12 +395,12 @@ def generate_search_queries(symbol: str, data_context: Dict[str, Any]) -> List[s
             f"{symbol} price target forecast",
             f"{symbol} risk factors concerns"
         ]
-    
+
     model = genai.GenerativeModel(
         config.GEMINI_MODEL,
         generation_config={'temperature': 0.3, 'max_output_tokens': 1024}
     )
-    
+
     # Extract context for prompt
     signal_info = data_context.get('universal_system_signal', {})
     signal = signal_info.get('signal', 'UNKNOWN')
@@ -278,10 +409,11 @@ def generate_search_queries(symbol: str, data_context: Dict[str, Any]) -> List[s
     rsi = technicals.get('rsi', 50)
     classification = data_context.get('classification', {})
     sector = classification.get('sector', 'Unknown')
-    
+
     prompt = f"""
 You are a Senior Financial Research Analyst conducting comprehensive due diligence on {symbol}.
 Your task is to generate 15-18 highly specific search queries that will gather ALL information needed for a complete investment analysis.
+ENSURE queries are targeted at high-quality financial sources. Append "news" or "financial analysis" to most queries.
 
 CRITICAL: You must research UNPREDICTABLE RISK FACTORS that could cause sudden price movements.
 
@@ -323,23 +455,25 @@ Example output:
     try:
         response = model.generate_content(prompt)
         text = response.text.strip()
-        
+
         # Clean up response - extract JSON array
         if '[' in text and ']' in text:
             start = text.find('[')
             end = text.rfind(']') + 1
             json_str = text[start:end]
             queries = json.loads(json_str)
-            
+
             if isinstance(queries, list) and len(queries) >= 5:
-                logger.info(f"AI generated {len(queries)} research queries for {symbol}")
+                logger.info(
+                    f"AI generated {len(queries)} research queries for {symbol}")
                 return queries[:12]  # Cap at 12
-        
+
         # Fallback if parsing fails
         raise ValueError("Could not parse AI response")
-        
+
     except Exception as e:
-        logger.warning(f"AI query generation failed: {e}. Using fallback queries.")
+        logger.warning(
+            f"AI query generation failed: {e}. Using fallback queries.")
         # Comprehensive fallback queries
         return [
             f"{symbol} stock news today latest",
@@ -360,6 +494,7 @@ Example output:
             f"{symbol} analyst downgrade upgrade rating"
         ]
 
+
 def generate_market_insights(
     stock_symbol: str,
     technical_data: Dict[str, Any],
@@ -374,31 +509,38 @@ def generate_market_insights(
 ) -> Dict[str, Any]:
     """
     Generate comprehensive market insights acting as an Autonomous Agent.
-    
+
     Features:
     - Low temperature (0.1) for consistent outputs
     - Response caching (5 min TTL) for identical requests
     - Synthesizes data from ML models, regime detector, and real-time search
     """
+    logger.info(f" Starting AI analysis for {stock_symbol}")
+
     if not configure_gemini():
+        logger.error(
+            " Gemini API key not configured. Please set GEMINI_API_KEY in .env file.")
         return {
-            "summary": "AI configuration missing. Please set GEMINI_API_KEY.",
-            "recommendation": "HOLD",
-            "confidence": 0,
-            "key_factors": []
+            "error": "Gemini API key not configured",
+            "agent_summary": "AI analysis unavailable. Please configure GEMINI_API_KEY in your .env file.",
+            "recommendation": {"signal": "HOLD", "timeframe": "N/A", "action": "N/A"},
+            "confidence_score": 0,
+            "from_cache": False,
+            "key_drivers": [],
+            "risk_assessment": {"risk_factors": []}
         }
-    
+
     # Build data context for caching
     data_context = {
         "technicals": technical_data,
         "fundamentals": fundamental_data,
         "sentiment": news_sentiment,
         "classification": stock_classification,
-        "universal_system_signal": universal_signal, 
+        "universal_system_signal": universal_signal,
         "macro_environment": macro_data,
         "extra_metrics": extra_metrics
     }
-    
+
     # Check cache first for consistency
     if use_cache:
         cache_key = _create_cache_key(stock_symbol, data_context)
@@ -406,45 +548,63 @@ def generate_market_insights(
         if cached:
             cached['from_cache'] = True
             return cached
-    
+
     # Configure model with LOW TEMPERATURE for consistency
-    model = genai.GenerativeModel(
-        config.GEMINI_MODEL,
-        generation_config=CONSISTENCY_CONFIG
-    )
-    
+    model_name = config.GEMINI_MODEL
+    logger.info(f" Using Gemini model: {model_name}")
+
+    try:
+        model = genai.GenerativeModel(
+            model_name,
+            generation_config=CONSISTENCY_CONFIG
+        )
+        logger.info(f" Model initialized successfully")
+    except Exception as e:
+        logger.error(f" Failed to initialize Gemini model '{model_name}': {e}")
+        return {
+            "error": f"Failed to initialize model: {str(e)}",
+            "agent_summary": f"AI model initialization failed. Check model name: {model_name}",
+            "recommendation": {"signal": "HOLD", "timeframe": "N/A", "action": "N/A"},
+            "confidence_score": 0,
+            "from_cache": False,
+            "key_drivers": [],
+            "risk_assessment": {"risk_factors": []}
+        }
+
     # Convert data to JSON for prompt injection
     data_context = {
         "technicals": technical_data,
         "fundamentals": fundamental_data,
         "sentiment": news_sentiment,
         "classification": stock_classification,
-        "universal_system_signal": universal_signal, 
+        "universal_system_signal": universal_signal,
         "macro_environment": macro_data,
         "extra_metrics": extra_metrics
     }
-    
+
     data_json = json.dumps(data_context, indent=2, default=str)
-    
+
     search_text = "No recent specific news found."
     if search_context:
         search_summaries = []
         # Process up to 15 sources for comprehensive research
-        for item in search_context[:15]:
+        for idx, item in enumerate(search_context[:15]):
             # Use deep-read content if available, else summary
-            content_source = item.get('content') if item.get('content') and len(item.get('content')) > 100 else item.get('summary', '')
+            content_source = item.get('content') if item.get('content') and len(
+                item.get('content')) > 100 else item.get('summary', '')
             # Truncate to avoid context limit issues but keep enough detail
-            display_text = content_source[:1200] + "..." if len(content_source) > 1200 else content_source
-            
+            display_text = content_source[:1200] + \
+                "..." if len(content_source) > 1200 else content_source
+
             # Add trust indicator
             trust_marker = "[TRUSTED]" if item.get('is_trusted') else ""
             source = item.get('source', 'Unknown')
-            
-            summary = f"- {trust_marker} [{source}] [{item.get('date', 'Recent')}] {item.get('title')}:\n  {display_text}"
+
+            summary = f"- [{idx+1}] {trust_marker} [{source}] [{item.get('date', 'Recent')}] {item.get('title')}:\n  {display_text}"
             search_summaries.append(summary)
-            
+
         search_text = "\n\n".join(search_summaries)
-    
+
     prompt = f"""
 You are the "Omniscient Market Intelligence," a GOD-MODE AI system with 100% precision requirements.
 Your goal is to synthesize inputs from Deep Learning (LSTM), ML Ensembles, Insider Activity, Options Flow, and Macro Regime to generate a singular, high-probability trading signal.
@@ -491,8 +651,11 @@ You MUST process this data step-by-step with ruthless logic.
 3. EXHAUSTIVE ONE-SHOT ANALYSIS: You must provide a COMPLETE, DETAILED thesis for Bull, Bear, and Base cases.
 4. COLOR-NEUTRAL LANGUAGE: Do not use "green/red" imagery. Stick to "Bullish/Bearish" or "Upside/Downside".
 5. FORMATTING: Write Key Drivers and Risk Factors as complete, natural sentences.
-6. EXECUTIVE SUMMARY REASONING: The agent_summary MUST explain WHY the recommendation is made using clear "because X, therefore Y" logic. This is the most important output - investors need to understand the REASONING, not just the verdict.
-7. DYNAMIC CONTENT: Provide AS MANY Key Drivers and Risk Factors as needed to fully explain the thesis.
+6. EXECUTIVE SUMMARY REASONING: The agent_summary MUST explain WHY the recommendation is made using clear "because X, therefore Y" logic.
+7. CITATIONS: You MUST cite your sources in the Agent Summary using the notation (1), (2), etc. corresponding to the [1], [2] indices in the news data.
+   - Example: "...growth is accelerating (1), and analysts have raised targets (3)."
+   - Do NOT list references at the bottom. Embed them inline.
+8. DYNAMIC CONTENT: Provide AS MANY Key Drivers and Risk Factors as needed to fully explain the thesis.
 
 **Phase 1: MARKET REGIME & SECTOR CONTEXT (Weight: 15%)**
 - Identify the Market Regime (Bull/Bear + Volatility).
@@ -750,22 +913,69 @@ Return ONLY valid JSON.
 """
 
     try:
-        response = model.generate_content(prompt)
+        logger.info(f" Calling Gemini API for {stock_symbol} analysis...")
+
+        # Use coordinator with circuit breaker and rate limiting
+        response = _call_gemini_with_coordinator(
+            model, prompt, use_coordinator=True)
+
+        logger.info(f" Gemini API responded successfully for {stock_symbol}")
+
         text = response.text.replace('```json', '').replace('```', '').strip()
         result = json.loads(text)
-        
+
         # Cache successful response for consistency
         if use_cache:
             result['from_cache'] = False
             result['generated_at'] = datetime.now().isoformat()
             _response_cache[cache_key] = (result.copy(), datetime.now())
-        
+
+        logger.info(f" AI analysis complete for {stock_symbol}")
         return result
+    except json.JSONDecodeError as e:
+        logger.error(
+            f" Gemini response parsing failed for {stock_symbol}: {e}")
+        logger.error(f"Raw response text (first 500 chars): {text[:500]}...")
+        return {
+            "error": f"Failed to parse AI response: {str(e)}",
+            "agent_summary": "AI Agent generated invalid response format. Analysis incomplete.",
+            "recommendation": {"signal": "HOLD", "timeframe": "N/A", "action": "N/A"},
+            "confidence_score": 0,
+            "from_cache": False
+        }
     except Exception as e:
-        logger.error(f"Gemini AI failed: {e}")
+        error_str = str(e)
+
+        # Special handling for circuit breaker and rate limiting
+        if "Circuit breaker OPEN" in error_str or "temporarily unavailable" in error_str:
+            logger.warning(
+                f" AI service temporarily unavailable for {stock_symbol}: {e}")
+            return {
+                "error": "AI service temporarily unavailable",
+                "agent_summary": "AI analysis temporarily unavailable due to rate limiting. Using fallback.",
+                "recommendation": {"signal": "HOLD", "timeframe": "WAIT", "action": "MONITOR"},
+                "confidence_score": 0,
+                "from_cache": False,
+                "from_fallback": True
+            }
+        elif "rate limit" in error_str.lower() or "429" in error_str:
+            logger.warning(f" Rate limit hit for {stock_symbol}: {e}")
+            return {
+                "error": "Rate limit exceeded",
+                "agent_summary": "API rate limit exceeded. Please try again in a few minutes.",
+                "recommendation": {"signal": "HOLD", "timeframe": "WAIT", "action": "RETRY_LATER"},
+                "confidence_score": 0,
+                "from_cache": False,
+                "from_fallback": True
+            }
+
+        # Generic error handling
+        logger.error(
+            f" Gemini AI generation failed for {stock_symbol}: {e}", exc_info=True)
         return {
             "error": str(e),
-            "summary": "AI Agent failed to synthesize data.",
-            "recommendation": "HOLD",
+            "agent_summary": f"AI Agent failed to synthesize data: {str(e)}",
+            "recommendation": {"signal": "HOLD", "timeframe": "N/A", "action": "N/A"},
+            "confidence_score": 0,
             "from_cache": False
         }

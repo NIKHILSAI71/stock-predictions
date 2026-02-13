@@ -436,3 +436,134 @@ def inverse_transform(
     Convenience function for inverse transformation.
     """
     return get_preprocessor().inverse_transform(predictions, symbol, column)
+
+
+def get_preprocessing_metrics(
+    df: pd.DataFrame,
+    symbol: str
+) -> Dict[str, Any]:
+    """
+    Get detailed preprocessing metrics for a stock.
+    
+    Returns metrics about:
+    - Wavelet denoising effectiveness
+    - Outlier detection and removal
+    - Data normalization parameters
+    - Feature engineering summary
+    
+    Args:
+        df: Raw DataFrame with OHLCV data
+        symbol: Stock ticker symbol
+        
+    Returns:
+        Dictionary with preprocessing metrics for display
+    """
+    if df is None or df.empty:
+        return {"error": "No data provided"}
+    
+    metrics = {
+        "symbol": symbol,
+        "wavelet_available": PYWT_AVAILABLE,
+        "data_quality": {},
+        "wavelet_denoising": {},
+        "outlier_analysis": {},
+        "normalization": {},
+        "features_generated": []
+    }
+    
+    try:
+        # Data quality metrics
+        initial_rows = len(df)
+        missing_count = df.isnull().sum().sum()
+        metrics["data_quality"] = {
+            "total_rows": initial_rows,
+            "missing_values": int(missing_count),
+            "missing_pct": round(missing_count / (initial_rows * len(df.columns)) * 100, 2) if initial_rows > 0 else 0,
+            "columns": list(df.columns)
+        }
+        
+        # Wavelet denoising metrics
+        if PYWT_AVAILABLE and 'Close' in df.columns and len(df) >= 60:
+            original_close = df['Close'].values
+            
+            # Create preprocessor and apply wavelet
+            preprocessor = ConsistentPreprocessor(wavelet_enabled=True)
+            
+            # Calculate noise metrics
+            original_std = np.std(np.diff(original_close))
+            
+            # Apply wavelet denoising
+            try:
+                denoised = preprocessor._wavelet_denoise(original_close)
+                denoised_std = np.std(np.diff(denoised[:len(original_close)]))
+                
+                noise_reduction = ((original_std - denoised_std) / original_std * 100) if original_std > 0 else 0
+                
+                metrics["wavelet_denoising"] = {
+                    "applied": True,
+                    "wavelet_type": "db4 (Daubechies-4)",
+                    "original_volatility": round(original_std, 4),
+                    "denoised_volatility": round(denoised_std, 4),
+                    "noise_reduction_pct": round(max(0, noise_reduction), 2),
+                    "signal_clarity": "High" if noise_reduction > 20 else ("Medium" if noise_reduction > 10 else "Low")
+                }
+            except Exception as e:
+                metrics["wavelet_denoising"] = {"applied": False, "error": str(e)}
+        else:
+            metrics["wavelet_denoising"] = {
+                "applied": False,
+                "reason": "pywt not available" if not PYWT_AVAILABLE else (
+                    "Insufficient data (need 60+ rows)" if len(df) < 60 else "No Close column"
+                )
+            }
+        
+        # Outlier analysis
+        if 'Close' in df.columns:
+            returns = df['Close'].pct_change().dropna()
+            if len(returns) > 0:
+                mean_return = returns.mean()
+                std_return = returns.std()
+                threshold = 5.0 * std_return
+                
+                outliers = ((returns > mean_return + threshold) | (returns < mean_return - threshold)).sum()
+                
+                metrics["outlier_analysis"] = {
+                    "total_returns": len(returns),
+                    "outliers_detected": int(outliers),
+                    "outlier_pct": round(outliers / len(returns) * 100, 2) if len(returns) > 0 else 0,
+                    "threshold_used": f"{5.0} standard deviations",
+                    "mean_daily_return": round(mean_return * 100, 4),
+                    "return_volatility": round(std_return * 100, 4)
+                }
+        
+        # Normalization params
+        preprocessor = get_preprocessor()
+        scaler_params = preprocessor.get_scaler_params(symbol)
+        if scaler_params:
+            metrics["normalization"] = {
+                "method": "MinMax [0, 1]",
+                "columns_normalized": len(scaler_params),
+                "price_range": {
+                    "min": scaler_params.get('Close', {}).get('min'),
+                    "max": scaler_params.get('Close', {}).get('max')
+                } if 'Close' in scaler_params else {}
+            }
+        else:
+            metrics["normalization"] = {"status": "Not yet applied for this symbol"}
+        
+        # Features that would be generated
+        metrics["features_generated"] = [
+            "returns", 
+            "sma_5", "sma_10", "sma_20",
+            "std_5", "std_10", "std_20",
+            "min_5", "min_10", "min_20",
+            "max_5", "max_10", "max_20",
+            "momentum_5", "momentum_10", "momentum_20",
+            "roc_5", "roc_10", "roc_20",
+            "volume_sma_20", "volume_ratio"
+        ]
+        
+    except Exception as e:
+        metrics["error"] = str(e)
+    
+    return metrics

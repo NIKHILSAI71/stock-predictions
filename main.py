@@ -1,40 +1,47 @@
 """
-Stock Algorithms - Desktop Application
-Runs as a standalone app with embedded browser window.
+Stock Algorithms - API Server
+FastAPI backend for stock analysis application with production-grade security.
 """
 
 import uvicorn
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
-import os
-import sys
-import threading
-import webbrowser
+from fastapi.responses import JSONResponse
 import logging
 from contextlib import asynccontextmanager
 
-from src import config
+# Import production configuration and security
+from src.core.config_validator import load_config, print_config_summary
+from src.core.logging_config import setup_logging
+from src.core.auth_middleware import AuthMiddleware, APIKeyManager
+from src.core.rate_limiter import RateLimitMiddleware, InMemoryRateLimiter
+from src.core.error_handlers import register_exception_handlers
+
 from src.api.endpoints import (
-    stock, technical, fundamental, quantitative, market, ai, signals, accuracy
+    stock, technical, fundamental, quantitative, market, ai, signals, accuracy, sentiment
 )
 
+# Load and validate configuration
+try:
+    config = load_config()
+except Exception as e:
+    print(f"\n❌ FATAL: Configuration validation failed")
+    print(f"Error: {str(e)}\n")
+    print("Please fix your .env file before starting the server.")
+    exit(1)
 
-# ============================================
-# PATH RESOLUTION FOR PYINSTALLER
-# ============================================
-def get_base_path():
-    """Get the base path for bundled or development mode."""
-    if getattr(sys, 'frozen', False):
-        # Running as compiled executable
-        return sys._MEIPASS
-    else:
-        # Running in development
-        return os.path.dirname(os.path.abspath(__file__))
+# Setup logging early
+setup_logging(
+    log_level=config.LOG_LEVEL,
+    log_file=config.LOG_FILE_PATH,
+    environment=config.ENVIRONMENT
+)
 
-BASE_PATH = get_base_path()
-STATIC_PATH = os.path.join(BASE_PATH, "static")
+logger = logging.getLogger(__name__)
+
+# Initialize security components
+api_key_manager = APIKeyManager(config.api_keys_list)
+rate_limiter = InMemoryRateLimiter(config.RATE_LIMIT_PER_MINUTE)
 
 
 # ============================================
@@ -42,144 +49,146 @@ STATIC_PATH = os.path.join(BASE_PATH, "static")
 # ============================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Modern lifespan handler replacing deprecated on_event."""
-    logger = logging.getLogger("uvicorn.info")
-    logger.info("System starting up...")
-    logger.info("Stock Analysis System v1.0 Online")
-    logger.info(f"Static files path: {STATIC_PATH}")
-    logger.info("Verifying API Key...")
-    if not config.GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not found in environment variables or config.py")
-    else:
-        logger.info("API Key check passed.")
+    """
+    Modern lifespan handler for startup and shutdown.
+
+    Startup:
+    - Print configuration summary
+    - Start rate limiter cleanup task
+    - Validate API keys
+
+    Shutdown:
+    - Stop rate limiter cleanup task
+    """
+    logger.info("=" * 60)
+    logger.info("Stock Analysis API Starting Up")
+    logger.info("=" * 60)
+
+    # Print configuration summary
+    print_config_summary(config)
+
+    # Store config in app state for access by error handlers
+    app.state.config = config
+    app.state.environment = config.ENVIRONMENT
+
+    # Start rate limiter background tasks
+    await rate_limiter.start()
+    logger.info("Rate limiter started")
+
+    logger.info("✓ All systems operational")
+    logger.info("=" * 60)
+
     yield
-    logger.info("Shutting down...")
+
+    # Shutdown
+    logger.info("Shutting down gracefully...")
+    await rate_limiter.stop()
+    logger.info("✓ Shutdown complete")
 
 
 app = FastAPI(
     title="Stock Analysis API",
-    description="Comprehensive Stock Analysis & AI Prediction API",
-    version="1.0.0",
-    lifespan=lifespan
+    description="Comprehensive Stock Analysis & AI Prediction API with production-grade security",
+    version="2.0.0",
+    lifespan=lifespan,
+    # Disable docs in production
+    docs_url="/docs" if config.ENVIRONMENT != "production" else None,
+    redoc_url="/redoc" if config.ENVIRONMENT != "production" else None,
 )
 
-# CORS Configuration
+# Register exception handlers FIRST
+register_exception_handlers(app)
+
+# Add Rate Limiting Middleware (BEFORE authentication)
+app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
+logger.info("Rate limiting middleware registered")
+
+# Add Authentication Middleware (BEFORE CORS)
+app.add_middleware(
+    AuthMiddleware,
+    key_manager=api_key_manager,
+    api_key_header=config.API_KEY_HEADER
+)
+logger.info("Authentication middleware registered")
+
+# CORS Configuration (AFTER authentication)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=config.allowed_origins_list,
+    # Disable in production
+    allow_credentials=(config.ENVIRONMENT != "production"),
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization", config.API_KEY_HEADER],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
+logger.info(f"CORS configured for {len(config.allowed_origins_list)} origins")
 
 # Include Routers
 app.include_router(stock.router, prefix="/api", tags=["Stock Data"])
-app.include_router(technical.router, prefix="/api", tags=["Technical Analysis"])
-app.include_router(fundamental.router, prefix="/api", tags=["Fundamental Analysis"])
-app.include_router(quantitative.router, prefix="/api/quantitative", tags=["Quantitative Analysis"])
+app.include_router(technical.router, prefix="/api",
+                   tags=["Technical Analysis"])
+app.include_router(fundamental.router, prefix="/api",
+                   tags=["Fundamental Analysis"])
+app.include_router(quantitative.router,
+                   prefix="/api/quantitative", tags=["Quantitative Analysis"])
 app.include_router(market.router, prefix="/api", tags=["Market Analysis"])
 app.include_router(signals.router, prefix="/api", tags=["Signals"])
 app.include_router(ai.router, prefix="/api", tags=["AI Analysis"])
 app.include_router(accuracy.router, prefix="/api", tags=["Model Accuracy"])
-
-
-# Mount Static Files with correct path
-if os.path.exists(STATIC_PATH):
-    app.mount("/static", StaticFiles(directory=STATIC_PATH), name="static")
-    # Also mount at root for CSS/JS relative paths
-    app.mount("/css", StaticFiles(directory=os.path.join(STATIC_PATH, "css")), name="css")
-    app.mount("/js", StaticFiles(directory=os.path.join(STATIC_PATH, "js")), name="js")
-    if os.path.exists(os.path.join(STATIC_PATH, "icons")):
-        app.mount("/icons", StaticFiles(directory=os.path.join(STATIC_PATH, "icons")), name="icons")
-
-
-@app.get("/error")
-async def error_page():
-    return FileResponse(os.path.join(STATIC_PATH, "error.html"))
-
-
-@app.get("/")
-async def read_root():
-    return FileResponse(os.path.join(STATIC_PATH, "index.html"))
+app.include_router(sentiment.router, prefix="/api",
+                   tags=["Sentiment Analysis"])
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
-
-
-@app.get("/{full_path:path}")
-async def catch_all(full_path: str):
-    if full_path.startswith("api") or full_path.startswith("static"):
-        return JSONResponse(status_code=404, content={"detail": "Not Found"})
-    return FileResponse(os.path.join(STATIC_PATH, "index.html"))
-
-
-# ============================================
-# DESKTOP APP LAUNCHER
-# ============================================
-def run_server():
-    """Run the uvicorn server."""
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
-
-
-def open_browser():
-    """Open the default browser after a short delay."""
-    import time
-    time.sleep(2)  # Wait for server to start
-    webbrowser.open("http://127.0.0.1:8000")
-
-
-def run_desktop_app():
     """
-    Run as a desktop app with embedded browser.
-    Uses pywebview if available, otherwise opens in default browser.
+    Health check endpoint (no authentication required).
+
+    Returns system status and rate limiter statistics.
     """
-    try:
-        import webview
-        
-        # Start server in background thread
-        server_thread = threading.Thread(target=run_server, daemon=True)
-        server_thread.start()
-        
-        # Wait for server to start
-        import time
-        time.sleep(2)
-        
-        # Create native window with embedded browser
-        webview.create_window(
-            title="Antigravity Finance",
-            url="http://127.0.0.1:8000",
-            width=1400,
-            height=900,
-            resizable=True,
-            min_size=(1000, 700)
-        )
-        webview.start()
-        
-    except ImportError:
-        print("pywebview not installed. Opening in default browser...")
-        print("To get native window, install: pip install pywebview")
-        
-        # Start server in background thread
-        server_thread = threading.Thread(target=run_server, daemon=True)
-        server_thread.start()
-        
-        # Open in default browser
-        open_browser()
-        
-        # Keep main thread alive
-        try:
-            server_thread.join()
-        except KeyboardInterrupt:
-            print("\nShutting down...")
+    stats = rate_limiter.get_stats()
+    return {
+        "status": "healthy",
+        "message": "API is running",
+        "version": "2.0.0",
+        "environment": config.ENVIRONMENT,
+        "rate_limiter": {
+            "total_requests": stats["total_requests"],
+            "throttled_requests": stats["throttled_requests"],
+            "active_ips": stats["active_ips"],
+        }
+    }
+
+
+@app.get("/")
+async def root():
+    """
+    API root endpoint (no authentication required).
+
+    Returns basic API information and available endpoints.
+    """
+    return {
+        "message": "Stock Analysis API",
+        "version": "2.0.0",
+        "environment": config.ENVIRONMENT,
+        "docs": "/docs" if config.ENVIRONMENT != "production" else None,
+        "health": "/health",
+        "authentication": {
+            "required": True,
+            "header": config.API_KEY_HEADER,
+            "message": "All /api/* endpoints require authentication"
+        },
+        "rate_limit": {
+            "limit": f"{config.RATE_LIMIT_PER_MINUTE} requests per minute per IP"
+        }
+    }
 
 
 if __name__ == "__main__":
-    # Check if running as bundled app or in development
-    if getattr(sys, 'frozen', False):
-        # Running as .exe - launch desktop app
-        run_desktop_app()
-    else:
-        # Development mode - just run server
-        uvicorn.run(app, host=config.HOST, port=config.PORT)
+    # Run with uvicorn
+    uvicorn.run(
+        app,
+        host=config.HOST,
+        port=config.PORT,
+        log_level=config.LOG_LEVEL.lower(),
+    )

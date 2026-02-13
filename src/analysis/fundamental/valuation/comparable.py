@@ -5,6 +5,9 @@ Comparable Company Analysis (Comps)
 import yfinance as yf
 import pandas as pd
 from typing import Dict, List, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_peer_metrics(symbols: List[str]) -> pd.DataFrame:
@@ -41,7 +44,7 @@ def get_peer_metrics(symbols: List[str]) -> pd.DataFrame:
                 'Dividend Yield': (info.get('dividendYield', 0) or 0) * 100
             })
         except Exception as e:
-            print(f"Error fetching {symbol}: {e}")
+            logger.error(f"Error fetching {symbol}: {e}")
     
     return pd.DataFrame(metrics)
 

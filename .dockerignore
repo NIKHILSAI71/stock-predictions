@@ -1,0 +1,112 @@
+# Version Control
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+test/
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.coveragerc
+pytest.ini
+
+# Documentation
+*.md
+docs/
+README.md
+LICENSE
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Logs
+logs/
+*.log
+
+# Data (exclude from build, mount as volumes)
+data/cache/
+data/models/
+data/predictions/
+
+# Frontend (if separate build)
+frontend/
+node_modules/
+npm-debug.log
+
+# Environment files (use secrets instead)
+.env
+.env.*
+!.env.example
+
+# Secrets
+secrets/
+*.key
+*.pem
+*.crt
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Docker
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile*
+!Dockerfile
+
+# Deployment
+deployment/
+k8s/
+terraform/
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# Jupyter notebooks (if not needed in production)
+*.ipynb
+.ipynb_checkpoints/
+
+# Agent/Claude Code artifacts
+.agent/
+.claude/

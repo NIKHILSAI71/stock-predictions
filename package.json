@@ -1,0 +1,19 @@
+{
+  "name": "stock-algorithms",
+  "version": "2.0.0",
+  "description": "Stock Analysis Platform with AI-powered predictions",
+  "private": true,
+  "scripts": {
+    "backend": "cd %cd% && .venv\\Scripts\\activate && python main.py",
+    "frontend": "cd frontend && npm run dev",
+    "install-frontend": "cd frontend && npm install",
+    "install-backend": "pip install -r requirements.txt",
+    "test": "pytest test/ -v --cov=src",
+    "docker-build": "docker-compose build",
+    "docker-up": "docker-compose up -d",
+    "docker-down": "docker-compose down"
+  },
+  "keywords": ["stock", "analysis", "ai", "trading", "fastapi", "react"],
+  "author": "",
+  "license": "MIT"
+}

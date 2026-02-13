@@ -34,27 +34,36 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ============================================
 FROM base AS production
 
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from dependencies stage
 COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=dependencies /usr/local/bin /usr/local/bin
 
-# Copy application code
-COPY main.py .
-COPY src/ ./src/
-COPY static/ ./static/
-COPY data/ ./data/
+# Create non-root user and group for security
+RUN groupadd -r appuser && \
+    useradd --no-log-init -r -g appuser appuser
 
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash appuser && \
+# Create required directories with proper permissions
+RUN mkdir -p /app/logs /app/data/cache /app/data/models /app/data/predictions /app/secrets && \
     chown -R appuser:appuser /app
+
+# Copy application code
+COPY --chown=appuser:appuser main.py .
+COPY --chown=appuser:appuser src/ ./src/
+
+# Switch to non-root user
 USER appuser
 
 # Expose port
 EXPOSE 8000
 
-# Health check
+# Health check with curl (more reliable)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application with multiple workers for production
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

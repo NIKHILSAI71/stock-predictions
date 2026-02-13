@@ -93,7 +93,7 @@ async def get_alternative_data(symbol: str):
     """Get alternative data (Sentiment, News)."""
     try:
         # Fetch real-time sentiment (No mocks)
-        sentiment = get_market_sentiment_search(symbol)
+        sentiment = await get_market_sentiment_search(symbol)
         
         news_vol = sentiment.get('news_volume', 0)
         traffic_level = "Very High" if news_vol >= 8 else ("High" if news_vol >= 5 else ("Medium" if news_vol >= 3 else "Low"))

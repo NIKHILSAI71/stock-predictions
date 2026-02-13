@@ -92,3 +92,43 @@ async def get_chart_data(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stock/history/{symbol}")
+async def get_stock_history(
+    symbol: str,
+    period: str = "6mo",
+    interval: str = "1d"
+):
+    """Get historical stock data formatted for frontend chart."""
+    try:
+        if not validate_symbol(symbol):
+            raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found")
+            
+        data = get_stock_data(symbol, period=period, interval=interval)
+        
+        if data.empty:
+            raise HTTPException(status_code=404, detail="No data found for symbol")
+            
+        # Format for Plotly (Frontend expects this structure)
+        # See static/js/app.js: loadChart function
+        formatted_data = {
+            "dates": data.index.strftime('%Y-%m-%d').tolist(),
+            "opens": data['Open'].round(2).tolist(),
+            "highs": data['High'].round(2).tolist(),
+            "lows": data['Low'].round(2).tolist(),
+            "closes": data['Close'].round(2).tolist(),
+            "volumes": data['Volume'].tolist()
+        }
+        
+        return {
+            "status": "success",
+            "data": formatted_data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "detail": str(e)}
+        )

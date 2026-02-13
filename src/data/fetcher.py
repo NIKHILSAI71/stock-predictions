@@ -7,11 +7,48 @@ import yfinance as yf
 import pandas as pd
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
+from .cache_manager import cached
 
 
-from functools import lru_cache
+def safe_float(val: Any) -> float:
+    """Safely convert value to float."""
+    try:
+        if pd.isna(val) or val == '' or val is None:
+            return 0.0
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            clean_val = val.replace(',', '').replace('$', '').replace('%', '').strip()
+            multiplier = 1.0
+            if clean_val.upper().endswith('M'):
+                multiplier = 1_000_000.0
+                clean_val = clean_val[:-1]
+            elif clean_val.upper().endswith('B'):
+                multiplier = 1_000_000_000.0
+                clean_val = clean_val[:-1]
+            elif clean_val.upper().endswith('T'):
+                multiplier = 1_000_000_000_000.0
+                clean_val = clean_val[:-1]
+            return float(clean_val) * multiplier
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
 
-@lru_cache(maxsize=32)
+
+@cached('company_info', ttl_minutes=60)
+def get_raw_info(symbol: str) -> Dict[str, Any]:
+    """
+    Fetch and cache raw stock info from yfinance.
+    Specific wrapper to avoid multiple API calls for the same symbol.
+    """
+    try:
+        ticker = yf.Ticker(symbol)
+        return ticker.info
+    except Exception as e:
+        raise ValueError(f"Error fetching raw info for {symbol}: {str(e)}")
+
+
+@cached('stock_data', ttl_minutes=30)
 def get_stock_data(
     symbol: str,
     period: str = "1y",
@@ -19,25 +56,25 @@ def get_stock_data(
 ) -> pd.DataFrame:
     """
     Fetch historical OHLCV data for a stock.
-    
+
     Args:
         symbol: Stock ticker symbol (e.g., 'AAPL', 'MSFT')
         period: Data period ('1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max')
         interval: Data interval ('1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo')
-    
+
     Returns:
         DataFrame with columns: Open, High, Low, Close, Volume, Adj Close
     """
     try:
         ticker = yf.Ticker(symbol)
         data = ticker.history(period=period, interval=interval)
-        
+
         if data.empty:
             raise ValueError(f"No data found for symbol: {symbol}")
-        
+
         # Ensure column names are standardized
         data.columns = [col.title() for col in data.columns]
-        
+
         return data
     except Exception as e:
         raise ValueError(f"Error fetching data for {symbol}: {str(e)}")
@@ -46,17 +83,16 @@ def get_stock_data(
 def get_current_price(symbol: str) -> Dict[str, Any]:
     """
     Get the current/latest price information for a stock.
-    
+
     Args:
         symbol: Stock ticker symbol
-    
+
     Returns:
         Dictionary with current price information
     """
     try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        
+        info = get_raw_info(symbol)
+
         return {
             "symbol": symbol.upper(),
             "current_price": info.get("regularMarketPrice", info.get("currentPrice")),
@@ -72,27 +108,28 @@ def get_current_price(symbol: str) -> Dict[str, Any]:
             "last_updated": datetime.now().isoformat()
         }
     except Exception as e:
-        raise ValueError(f"Error fetching current price for {symbol}: {str(e)}")
+        raise ValueError(
+            f"Error fetching current price for {symbol}: {str(e)}")
 
 
 def get_financial_data(symbol: str) -> Dict[str, Any]:
     """
     Get financial statements data for fundamental analysis.
-    
+
     Args:
         symbol: Stock ticker symbol
-    
+
     Returns:
         Dictionary with balance sheet, income statement, and cash flow data
     """
     try:
         ticker = yf.Ticker(symbol)
-        
+
         # Get financial statements
         balance_sheet = ticker.balance_sheet
         income_stmt = ticker.income_stmt
         cash_flow = ticker.cashflow
-        
+
         return {
             "symbol": symbol.upper(),
             "balance_sheet": balance_sheet.to_dict() if not balance_sheet.empty else {},
@@ -101,24 +138,24 @@ def get_financial_data(symbol: str) -> Dict[str, Any]:
             "last_updated": datetime.now().isoformat()
         }
     except Exception as e:
-        raise ValueError(f"Error fetching financial data for {symbol}: {str(e)}")
+        raise ValueError(
+            f"Error fetching financial data for {symbol}: {str(e)}")
 
 
-@lru_cache(maxsize=64)
+@cached('company_info', ttl_minutes=1440)
 def get_company_info(symbol: str) -> Dict[str, Any]:
     """
     Get company profile and key statistics.
-    
+
     Args:
         symbol: Stock ticker symbol
-    
+
     Returns:
         Dictionary with company information
     """
     try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        
+        info = get_raw_info(symbol)
+
         data = {
             "symbol": symbol.upper(),
             "name": info.get("longName", info.get("shortName", symbol)),
@@ -166,17 +203,20 @@ def get_company_info(symbol: str) -> Dict[str, Any]:
             "number_of_analysts": info.get("numberOfAnalystOpinions"),
             "last_updated": datetime.now().isoformat()
         }
-        
+
         # Manual PEG calculation if missing
         if not data.get("peg_ratio") and data.get("trailing_pe") and data.get("earnings_growth"):
             try:
+                trailing_pe = safe_float(data.get("trailing_pe"))
+                earnings_growth = safe_float(data.get("earnings_growth"))
+                
                 # PEG = PE / (Earnings Growth Rate * 100)
-                growth_rate = data["earnings_growth"] * 100
+                growth_rate = earnings_growth * 100
                 if growth_rate > 0:
-                    data["peg_ratio"] = round(data["trailing_pe"] / growth_rate, 2)
+                    data["peg_ratio"] = round(trailing_pe / growth_rate, 2)
             except:
                 pass
-                
+
         return data
     except Exception as e:
         raise ValueError(f"Error fetching company info for {symbol}: {str(e)}")
@@ -185,17 +225,17 @@ def get_company_info(symbol: str) -> Dict[str, Any]:
 def get_dividends(symbol: str) -> pd.DataFrame:
     """
     Get dividend history for a stock.
-    
+
     Args:
         symbol: Stock ticker symbol
-    
+
     Returns:
         DataFrame with dividend history
     """
     try:
         ticker = yf.Ticker(symbol)
         dividends = ticker.dividends
-        
+
         return dividends
     except Exception as e:
         raise ValueError(f"Error fetching dividends for {symbol}: {str(e)}")
@@ -204,16 +244,15 @@ def get_dividends(symbol: str) -> pd.DataFrame:
 def validate_symbol(symbol: str) -> bool:
     """
     Validate if a stock symbol exists.
-    
+
     Args:
         symbol: Stock ticker symbol
-    
+
     Returns:
         True if symbol exists, False otherwise
     """
     try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
+        info = get_raw_info(symbol)
         return "regularMarketPrice" in info or "currentPrice" in info
     except:
         return False

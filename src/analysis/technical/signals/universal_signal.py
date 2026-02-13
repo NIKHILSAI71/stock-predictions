@@ -17,10 +17,8 @@ from src.analysis.quantitative.classification import (
     DEFAULT_SECTOR_PROFILE
 )
 from src.analysis.quantitative.ml_models import regime_detection
-from src.analysis.quantitative.ml_aggregator import get_ml_ensemble_prediction
-from src.analysis.quantitative.ensemble_scorer import get_ensemble_prediction
-from src.analysis.quantitative.ml_aggregator import get_ml_ensemble_prediction
 from src.adaptive.adaptive_learning import AdaptiveLearningSystem
+from src.analysis.quantitative.ensemble_scorer import get_ensemble_prediction
 
 # Initialize global systems
 adaptive_system = AdaptiveLearningSystem()
@@ -69,11 +67,8 @@ def generate_universal_signal(
     )
     
     # Step 5: Get ML ensemble predictions (Aggregator)
-    ml_prediction = get_ml_ensemble_prediction(
-        stock_data=stock_data,
-        lookback_days=252,
-        prediction_horizon=5
-    )
+    # ML Aggregator has been removed. Using empty dict/placeholder.
+    ml_prediction = {} # Placeholder for removed ml_aggregator
     
     # Step 6: Get adaptive learning weights
     adaptive_weights = adaptive_system.get_performance_summary()
@@ -106,7 +101,7 @@ def generate_universal_signal(
     }
     
     # Step 8: Combine ML prediction with signal (Refined logic)
-    if ml_prediction.get('ensemble_direction') != 'NEUTRAL':
+    if ml_prediction.get('ensemble_direction') and ml_prediction.get('ensemble_direction') != 'NEUTRAL':
         ml_direction = ml_prediction['ensemble_direction']
         signal_direction = signal['recommendation']
         
